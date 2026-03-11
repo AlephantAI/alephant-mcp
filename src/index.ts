@@ -3,51 +3,80 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { useRealApi } from "./config.js";
+import {
+  getScope,
+  getDashboard,
+  getLiveMetrics,
+  applyPolicy,
+  formatScopeLabel,
+} from "./client.js";
 
 /**
- * Alephant MCP Server - 驾驶舱增强版
- * 功能：工具集成 + 审计报告 Prompt + 调度支持
+ * Alephant MCP Server — user-centric: uses Virtual Key to resolve scope (workspace/department/Agent) and monitor.
+ * No login, no workspace switching; users configure multiple Keys for separate monitoring.
  */
 
-// 1. 初始化 MCP 服务
 const server = new McpServer({
   name: "Alephant-FinOps-Manager",
-  version: "1.0.2",
+  version: "1.0.3",
 });
 
+const credentialHint =
+  "Set env ALEPHANT_API_BASE_URL and ALEPHANT_VIRTUAL_KEY, or pass them in Cursor MCP config.";
+
 /**
- * 工具 1: 查询预算状态
+ * Tool 1: Get budget status (scope = current Virtual Key; no workspaceId required)
  */
 server.tool(
   "get_budget_status",
   {
-    workspaceId: z.string().describe("Alephant 工作区 ID"),
-    department: z.string().optional().describe("部门名称"),
+    department: z.string().optional().describe("Department name (optional, for display or filter)"),
   },
-  async ({ workspaceId, department }) => {
+  async ({ department: _department }) => {
     try {
-      // 模拟后端返回的深度 FinOps 数据
+      if (useRealApi()) {
+        const [scope, dashboard, live] = await Promise.all([
+          getScope(),
+          getDashboard(),
+          getLiveMetrics(),
+        ]);
+        if (!scope) {
+          return {
+            content: [{ type: "text" as const, text: `Failed to get scope. ${credentialHint}` }],
+            isError: true,
+          };
+        }
+        const label = formatScopeLabel(scope);
+        const percent = live?.percent ?? dashboard?.costHistoryPercent?.slice(-1)[0] ?? 0;
+        const remaining = live?.remainingPercent ?? (100 - percent).toFixed(2);
+        const burnRate = live?.burnRate ?? dashboard?.burnRatePerHour ?? 0;
+        const runtimeDays = dashboard?.runtimeEstDays ?? 0;
+        const top = dashboard?.attributionItems?.[0];
+        const topConsumer = top?.name ?? "—";
+        const topCost = top?.costUsd ?? 0;
+
+        const text = `[Budget] ${label}\nRemaining: ${remaining}% | Spent: ${percent}%\nBurn rate: ${burnRate}/h | Est. runtime: ${runtimeDays} days\nTop consumer: ${topConsumer} ($${topCost.toFixed(2)})`;
+        return { content: [{ type: "text" as const, text }] };
+      }
+
       const mockData = {
-        total_budget: 100.0,
-        current_spend: 65.42,
-        prev_period_spend: 52.10, 
         remaining: 34.58,
+        current_spend: 65.42,
         currency: "USD",
         top_consumer: "Axpha-Trader",
         status: "Normal",
       };
-
       return {
-        content: [{ 
-          type: "text", 
-          text: `[预算看板] 剩余: ${mockData.remaining} ${mockData.currency} (已耗 ${mockData.current_spend}%)。
-环比增长: +13.32%。最大消耗源: ${mockData.top_consumer}。状态: ${mockData.status}。` 
-        }]
+        content: [{
+          type: "text" as const,
+          text: `[Budget] Remaining: ${mockData.remaining} ${mockData.currency} (spent ${mockData.current_spend}%). Top consumer: ${mockData.top_consumer}. Status: ${mockData.status}.\n(Mock data when API is not configured.)`,
+        }],
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return {
-        content: [{ type: "text", text: `获取预算失败: ${message}` }],
+        content: [{ type: "text" as const, text: `Failed to get budget: ${message}` }],
         isError: true,
       };
     }
@@ -55,100 +84,142 @@ server.tool(
 );
 
 /**
- * 工具 2: 列出所有活跃的虚拟密钥
+ * Tool 2: List cost attribution for current scope (current Virtual Key; no workspaceId required)
  */
 server.tool(
   "list_virtual_keys",
-  {
-    workspaceId: z.string().describe("工作区 ID"),
-  },
-  async ({ workspaceId }) => {
-    const keys = [
-      { id: "v-key-001", agent: "Axpha-Trader", model: "gpt-4o", daily_limit: "10.00", usage: "High" },
-      { id: "v-key-002", agent: "Code-Reviewer", model: "claude-3-5-sonnet", daily_limit: "5.00", usage: "Low" }
-    ];
+  {},
+  async () => {
+    try {
+      if (useRealApi()) {
+        const [scope, dashboard] = await Promise.all([getScope(), getDashboard()]);
+        if (!scope) {
+          return {
+            content: [{ type: "text" as const, text: `Failed to get scope. ${credentialHint}` }],
+            isError: true,
+          };
+        }
+        const label = formatScopeLabel(scope);
+        const items = dashboard?.attributionItems ?? [];
+        const lines = items.length
+          ? items.map((a) => `- ${a.name}${a.badge ? ` [${a.badge}]` : ""}: $${a.costUsd.toFixed(2)}`).join("\n")
+          : "(No attribution data yet)";
+        const text = `Current scope: ${label}\nCost attribution:\n${lines}`;
+        return { content: [{ type: "text" as const, text }] };
+      }
 
-    return {
-      content: [{ 
-        type: "text", 
-        text: `工作区 ${workspaceId} 活跃密钥分析：\n${keys.map(k => `- ${k.agent} [${k.model}]: 负载 ${k.usage}, 日限额 ${k.daily_limit}`).join("\n")}` 
-      }]
-    };
+      const keys = [
+        { agent: "Axpha-Trader", model: "gpt-4o", daily_limit: "10.00", usage: "High" },
+        { agent: "Code-Reviewer", model: "claude-3-5-sonnet", daily_limit: "5.00", usage: "Low" },
+      ];
+      const text = `Active keys (Mock):\n${keys.map((k) => `- ${k.agent} [${k.model}]: load ${k.usage}, daily limit ${k.daily_limit}`).join("\n")}`;
+      return { content: [{ type: "text" as const, text }] };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        content: [{ type: "text" as const, text: `Failed to list: ${message}` }],
+        isError: true,
+      };
+    }
   }
 );
 
 /**
- * 工具 3: 调整策略 (下发干预)
+ * Tool 3: Apply cost policy (applies to current Virtual Key scope; no keyId required)
  */
 server.tool(
   "apply_cost_policy",
   {
-    keyId: z.string().describe("需要管控的虚拟密钥 ID"),
-    policy: z.enum(["low-cost", "high-performance", "block"]).describe("策略模式"),
+    policy: z.enum(["low-cost", "high-performance", "block"]).describe("Policy: low-cost=route to cheap model, high-performance=restore default, block=cut off traffic"),
   },
-  async ({ keyId, policy }) => {
-    return {
-      content: [{ 
-        type: "text", 
-        text: `【策略下发成功】密钥 ${keyId} 已切换至 ${policy} 模式。后续请求将自动路由至低成本模型。` 
-      }]
-    };
+  async ({ policy }) => {
+    try {
+      const action = policy === "high-performance" ? "restore" : policy === "low-cost" ? "low-cost" : "block";
+
+      if (useRealApi()) {
+        const result = await applyPolicy(action);
+        if (!result) {
+          return {
+            content: [{ type: "text" as const, text: `Policy request failed. ${credentialHint}` }],
+            isError: true,
+          };
+        }
+        if (!result.ok) {
+          return {
+            content: [{ type: "text" as const, text: `Policy failed: ${result.error ?? "Unknown error"}` }],
+            isError: true,
+          };
+        }
+        return {
+          content: [{ type: "text" as const, text: `Policy applied. Current key set to ${policy}. ${result.message ?? ""}` }],
+        };
+      }
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Policy applied (Mock). Current key set to ${policy}. Configure API for real enforcement.`,
+        }],
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        content: [{ type: "text" as const, text: `Failed to apply policy: ${message}` }],
+        isError: true,
+      };
+    }
   }
 );
 
 /**
- * 核心功能：审计报告提示词模板 (Prompts)
- * 对应方案 A：AI 调用此模板生成报告
+ * Audit report prompt: uses current Virtual Key scope; no workspaceId required
  */
 server.prompt(
   "cost_audit_report",
   {
-    period: z.enum(["weekly", "monthly", "quarterly"]).default("weekly").describe("审计周期"),
-    workspaceId: z.string().default("Axpha-Main").describe("工作区 ID"),
+    period: z.enum(["weekly", "monthly", "quarterly"]).default("weekly").describe("Audit period"),
   },
-  ({ period, workspaceId }) => {
-    const periodMap = {
-      weekly: "每周",
-      monthly: "每月",
-      quarterly: "每季度"
-    };
-
+  ({ period }) => {
+    const periodLabel = period === "weekly" ? "weekly" : period === "monthly" ? "monthly" : "quarterly";
     return {
       messages: [
         {
           role: "user",
           content: {
             type: "text",
-            text: `你现在是 Alephant FinOps 审计专家。请为工作区 ${workspaceId} 生成一份详细的 ${periodMap[period]} 成本审计报告。
+            text: `You are an Alephant FinOps audit expert. Using the **current Virtual Key scope** (user-centric; no workspace ID needed), produce a detailed ${periodLabel} cost audit report.
 
-请按以下顺序执行任务：
-1. 首先调用 get_budget_status 获取最新的预算消耗和趋势数据。
-2. 接着调用 list_virtual_keys 分析哪些智能体产生了最高费用。
-3. 结合数据进行诊断，如果环比增长超过 10%，请给出红色警告。
-4. 最后输出一份 Markdown 报告，包含：核心结论、消耗画像、风险评估及建议。`
-          }
-        }
-      ]
+Steps:
+1. Call get_budget_status (no args) to get budget and trend for the current key.
+2. Call list_virtual_keys (no args) to see cost attribution for the current scope.
+3. Analyze the data; flag warnings if growth or anomalies are significant.
+4. Output a Markdown report with: key findings, cost breakdown, risk assessment, and recommendations.`,
+          },
+        },
+      ],
     };
   }
 );
 
-// 3. 启动逻辑
 async function runServer() {
-  // 命令行审计模式支持 (用于简单的本地 Cron 调用)
   if (process.argv.includes("--audit")) {
-    console.log("--- Alephant 命令行审计报告 ---");
-    console.log("当前状态: Normal | 预算剩余: 34.58 USD | 建议: 维持现状");
+    console.log("--- Alephant CLI audit ---");
+    if (useRealApi()) {
+      const scope = await getScope();
+      const label = scope ? formatScopeLabel(scope) : "(Could not get scope)";
+      console.log("Scope:", label);
+    } else {
+      console.log("Status: Normal | Budget remaining: 34.58 USD | Suggestion: No change (Mock)");
+    }
     process.exit(0);
   }
 
-  // 正常 MCP 模式
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Alephant MCP Server (v1.0.2) 运行中...");
+  console.error("Alephant MCP Server (v1.0.3) running. User-centric; scope and metrics via Virtual Key.");
 }
 
-runServer().catch((error) => {
-  console.error("启动失败:", error);
+runServer().catch((err) => {
+  console.error("Startup failed:", err);
   process.exit(1);
 });
