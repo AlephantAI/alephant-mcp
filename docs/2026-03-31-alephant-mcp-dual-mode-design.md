@@ -1,7 +1,7 @@
 # Alephant MCP Server — 双模式架构设计
 
 **日期**: 2026-03-31  
-**修订**: 2026-04-01（基于 design-review 补充契约细节）；2026-04-01（多 PAT / 多工作区 MCP 配置；VK 鉴权与限流关系澄清）  
+**修订**: 2026-04-01（基于 design-review 补充契约细节）；2026-04-01（多 PAT / 多工作区 MCP 配置；VK 鉴权与限流关系澄清）；2026-04-01（与 `routes.go` 对齐：18 工具、`get_workspace_overview` → `/analytics/overview`、本阶段不提供 `get_request_logs`）  
 **状态**: 已批准  
 **范围**: alephant-mcp + backend-saas-service + Alephantinterface  
 
@@ -11,7 +11,7 @@
 
 为 Alephant BYO-KEY 平台构建 MCP（Model Context Protocol）Server，使开发者和管理者能在 Cursor、Claude Desktop、VS Code Copilot 等 AI 工具中通过自然语言查询 AI 支出、管理密钥和策略。
 
-> **与旧版 PRD 的关系**：本文档取代 `alephant-mcp/docs/alephant-mcp-prd.md`（2026-02-28 单模式设计）。旧 PRD 定义 12 个工具（单模式），本设计扩展为 19 个工具（双模式：4 共享 + 3 VK 模式专属 + 12 管理者专属）。旧 PRD 保留作历史参考，实现以本文档为准。
+> **与旧版 PRD 的关系**：本文档取代 `alephant-mcp/docs/alephant-mcp-prd.md`（2026-02-28 单模式设计）。旧 PRD 定义 12 个工具（单模式），本设计扩展为 **18** 个工具（双模式：4 共享 + 3 VK 模式专属 + **11** 管理者专属）。旧 PRD 保留作历史参考，实现以本文档为准。
 
 ### 1.1 核心决策
 
@@ -49,7 +49,7 @@
 │  │  └─────────────┘    │  ┌──────┐    ┌───────────┐   │  │  │
 │  │                     │  │  VK  │    │  Manager   │   │  │  │
 │  │                     │  │Tools │    │  Tools     │   │  │  │
-│  │                     │  │(7)   │    │  (12)      │   │  │  │
+│  │                     │  │(7)   │    │  (11)      │   │  │  │
 │  │                     │  └──┬───┘    └─────┬─────┘   │  │  │
 │  │                     └─────┼──────────────┼─────────┘  │  │
 │  └───────────────────────────┼──────────────┼────────────┘  │
@@ -612,7 +612,7 @@ alephant-mcp/
 │   │   │   └── budget.ts        ← get_my_budget, get_my_recent_requests
 │   │   └── manager/             ← 管理者专属工具
 │   │       ├── keys.ts          ← list/create/update/revoke virtual keys
-│   │       ├── analytics.ts     ← workspace overview, request logs
+│   │       ├── analytics.ts     ← get_workspace_overview（/analytics/overview）
 │   │       ├── agents.ts        ← list agents, agent analytics
 │   │       ├── departments.ts   ← list departments, department analytics
 │   │       └── policies.ts      ← budget policies, subscription info
@@ -680,12 +680,11 @@ await server.connect(transport);
 | `get_my_budget` | 查看自己的预算使用情况 | — | cockpit/budget-status |
 | `get_my_recent_requests` | 查看自己的近期请求 | `limit`（integer，1-100，默认 20） | cockpit/recent-requests |
 
-#### 管理者专属工具（12 个）
+#### 管理者专属工具（11 个）
 
 | 工具名 | 说明 | 关键参数 | 后端端点 |
 |--------|------|---------|---------|
-| `get_workspace_overview` | 工作区总览 | — | /workspaces/:id/stats |
-| `get_request_logs` | 请求日志查询 | `limit`（integer，1-100，默认 20）、`model`（string，可选）、`status`（"success"\|"failed"，可选） | /logs |
+| `get_workspace_overview` | 工作区总览（PAT + `X-Workspace-Id`） | — | **GET** `/analytics/overview` |
 | `list_virtual_keys` | 列出虚拟密钥 | — | /virtual-keys |
 | `create_virtual_key` | 创建虚拟密钥 | `label`（string，1-100 字符）、`master_key_id`（string）、`budget_cents`（integer，≥0）、`rate_limit_rpm`（integer，1-10000） | POST /virtual-keys |
 | `update_key_budget` | 更新密钥预算 | `key_id`（string）、`budget_cents`（integer，≥0）、`budget_action`（"alert_only"\|"block"） | PATCH /virtual-keys/:id |
@@ -696,6 +695,11 @@ await server.connect(transport);
 | `get_department_analytics` | 部门用量分析 | `department_id`（string）、`period`（"24h"\|"7d"\|"30d"） | /departments/:id/analytics |
 | `get_subscription_info` | 订阅与配额信息 | — | /subscriptions/current |
 | `set_budget_policy` | 设置预算策略 | `budget_cents`（integer，≥0）、`action`（"alert_only"\|"block"） | PUT /policies/budget-control |
+
+> **与 `backend-saas-service/internal/api/routes/routes.go` 对齐**
+>
+> - **`get_workspace_overview`**：须调用 **`GET /api/v1/analytics/overview`**（`authOrPAT` + `RequirePATScopes(read)` + `RequireWorkspace`）。**不得**使用 `GET /api/v1/workspaces/:id/stats`：该路由挂在 `RequireAuth`（JWT 会话）下，**PAT 会 401**。
+> - **`get_request_logs`（本阶段不提供）**：`GET /api/v1/logs` 同样为 **JWT-only**（`RequireAuth`），PAT 不可用；MCP **不注册**该工具。VK 侧近期请求由 `get_my_recent_requests`（Cockpit）覆盖；若未来要在 MCP 中暴露全量日志，需后端对 PAT 开放等价接口或新增 BFF（见 §7）。
 
 ### 5.4 错误处理
 
@@ -982,7 +986,6 @@ tools:
   - get_department_analytics
   - get_subscription_info
   - set_budget_policy
-  - get_request_logs
 ```
 
 **注册时序：** npm 包发布 → 更新 smithery.yaml → 向 modelcontextprotocol/servers 提 PR → 提交 Glama。三个目录注册完成后，用户可在 Smithery / Glama 搜索 "alephant" 一键安装。
@@ -1034,7 +1037,7 @@ tools:
 - **Streamable HTTP 传输**：部署到 `mcp.alephant.ai/mcp`，支持远程访问
 - **OAuth 2.1 Device Flow**：远程传输的认证方案
 - **`apply_cost_policy` 工具**：通过 MCP 直接切换 low-cost / high-performance / block 策略（需先定义后端策略切换 API 契约）
-- **更多工具**：Webhook 管理、审计日志查询、告警规则配置
+- **更多工具**：Webhook 管理、审计日志查询、告警规则配置；**`get_request_logs`**（待 `GET /api/v1/logs` 或等价端点对 PAT 开放后再纳入 MCP）
 - **VK Token 版本管理**：若 VK 格式升级（如 `vk2-`），通过前缀检测支持平滑迁移
 
 ---
@@ -1047,3 +1050,4 @@ tools:
 | 2026-04-01 | 基于 design-review 更新：移除 Mock 模式残留；补充 PAT 端点完整契约（分页格式、PATCH 请求字段、DELETE 204、workspace_id 来源说明）；补充 slug-hash 计算规范；添加 VK 状态模型与统一 401；补充所有 Cockpit 端点降级格式；添加 health check 端点；修复架构图工具数量 (16→12)；明确共享工具管理者后端为现有 /analytics/* 端点；完善错误处理（429/504/500/超时）；添加 ALEPHANT_WORKSPACE_ID 环境变量；明确 model-catalog 为静态 JSON；补充 billing_cycle 定义；澄清认证头已简化；明确 VK 数据隔离规则；添加服务间认证安全说明；补充工具参数类型约束。 |
 | 2026-04-01 | 将「MCP Server 请求限流」和「MCP 目录注册」从后续扩展升级为正式设计（§5.8 / §5.9）：新增令牌桶限流实现、ALEPHANT_RATE_LIMIT_RPM 环境变量、smithery.yaml 配置示例及三大目录注册时序。 |
 | 2026-04-01 | §2.1 补充 VK 字符串形态与服务端鉴权关系；§3.5 / §5.2 / §5.7 明确多 PAT 与多 `mcpServers` 条目切换工作区、`ALEPHANT_WORKSPACE_ID` 须与 PAT 绑定一致及服务端校验；§5.8 明确限流不替代鉴权。 |
+| 2026-04-01 | §5.3 / §5.9：工具总数 **18**（管理者 **11**）；`get_workspace_overview` → **`GET /api/v1/analytics/overview`**；移除 `get_request_logs` 与 smithery 列举；架构图 Manager Tools **(11)**；§7 注明日志工具后续条件。 |

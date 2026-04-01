@@ -11,7 +11,7 @@
 
 `alephant-mcp` 是 Alephant BYO-KEY 平台的 TypeScript MCP Server，支持 PAT 模式（管理员）和 VK 模式（开发者）双认证。本文档覆盖从「仓库内测」到「生态可见」的 Track 1 完整实施设计。
 
-**前置条件（阻塞项）：** 双模式架构开发线 A（PAT 系统）+ 开发线 B（Cockpit API）+ 开发线 C（MCP Server 19 工具）全部完成并通过集成测试，Track 1.0 方可启动。
+**前置条件（阻塞项）：** 双模式架构开发线 A（PAT 系统）+ 开发线 B（Cockpit API）+ 开发线 C（MCP Server **18** 工具）全部完成并通过集成测试，Track 1.0 方可启动。
 
 ---
 

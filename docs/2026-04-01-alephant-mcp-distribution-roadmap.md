@@ -66,7 +66,7 @@
 
 ```
 依赖链：
-  开发线 A（PAT 系统）+ 开发线 B（Cockpit API）+ 开发线 C（MCP Server 19 工具）
+  开发线 A（PAT 系统）+ 开发线 B（Cockpit API）+ 开发线 C（MCP Server 18 工具）
     → 集成测试通过
     → Track 1.0（npm 发布 + 目录注册）
     → Track 1.2（接入文档）/ Track 2（Python SDK）

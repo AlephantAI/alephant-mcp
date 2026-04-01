@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use @superpowers:subagent-driven-development (recommended) or @superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 `alephant-mcp` 从单模式（仅 VK + 旧 Cockpit 路径 + Mock）重构为设计文档 §5 定义的双模式 MCP Server：启动时识别 VK 或 PAT，按模式注册 19 个工具、2 个 Prompt、1 个静态 Resource；HTTP 层统一限流与 `safeCall` 错误映射；**不使用 Mock**，直接对接真实后端 API。
+**Goal:** 将 `alephant-mcp` 从单模式（仅 VK + 旧 Cockpit 路径 + Mock）重构为设计文档 §5 定义的双模式 MCP Server：启动时识别 VK 或 PAT，按模式注册 **18** 个工具（管理者 11 个：不含 `get_request_logs`，见下）、2 个 Prompt、1 个静态 Resource；HTTP 层统一限流与 `safeCall` 错误映射；**不使用 Mock**，直接对接真实后端 API。
+
+**与后端路由对齐（2026-04-01）：** `GET /api/v1/workspaces/:id/stats` 为 **JWT-only**（`RequireAuth`），PAT 不可用；`get_workspace_overview` 在 MCP 侧改为 **`GET /api/v1/analytics/overview`**（`authOrPAT` + `X-Workspace-Id`）。`GET /api/v1/logs` 亦为 **JWT-only**，**本迭代暂不实现** `get_request_logs` 工具（未来若后端对 PAT 开放或换 BFF 再补）。
 
 **Architecture:** `index.ts` 承担设计文档 §5.1 中 `server.ts` 的职责（创建 `McpServer`、注册工具/Prompt/Resource）；`detectAuthMode(env)` → `'vk' | 'manager'`；按模式构造 `CockpitClient`（Bearer VK → **仅** `/api/v1/cockpit/*`）与 **独立的** `GET /api/v1/models` 调用（见 Task 6，**不得**把 `list_available_models` 挂在 cockpit 路径下）或 `ManagerClient`（Bearer PAT + `X-Workspace-Id` / `ALEPHANT_WORKSPACE_ID` → `/api/v1/*`）；`registerTools(server, mode, clients)` 分发共享/VK 专属/管理者专属工具。所有经 HTTP 的出口在 `safeCall` 前 `await globalRateLimiter.acquire()`。`smithery.yaml` 与 npm 目录注册见 `plan/2026-04-01-track1-npm-distribution.md`，避免重复造轮子。
 
@@ -16,10 +18,12 @@
 |------|------|
 | **Cockpit API（实现计划）** | 见 **`backend-saas-service/plan/2026-04-01-cockpit-api-mcp-prerequisite.md`**。交付 §4.4–§4.5 端点（`/api/v1/cockpit/health`、`scope`、`usage-summary`、`daily-costs`、`cost-by-model`、`budget-status`、`recent-requests`）。**当前** `src/client.ts` 使用的 `/api/cockpit/dashboard`、`live-metrics`、`policy` 与已批准设计不一致，本计划**删除**对这些旧路径的依赖。 |
 | **PAT 系统（实现计划）** | 见 **`backend-saas-service/plan/2026-04-01-pat-system-mcp-prerequisite.md`**。交付表 + `/api/v1/pats`（JWT）+ Bearer `pat_...` 中间件 + scope + `X-Workspace-Id` 与 PAT 绑定工作区 **403**（§3.5）。 |
-| **管理者工具后端** | 在 PAT 计划 Task 7 挂载 scope 后，`GET /api/v1/models`（或 grep 等价路径）、`/analytics/*`、`/virtual-keys`、`/agents`、`/departments`、`/subscriptions/current`、`/policies/budget-control`、`/logs` 等须在 PAT + 正确 scope 下可用；路径以 `backend-saas-service` OpenAPI/路由为准。 |
+| **管理者工具后端** | 在 PAT 计划 Task 7 挂载 scope 后，`GET /api/v1/models`、`/analytics/*`、`/virtual-keys`、`/agents`、`/departments`、`/subscriptions/current`、`/policies/budget-control` 等须在 PAT + 正确 scope 下可用；路径以 `backend-saas-service` `internal/api/routes/routes.go` 为准。**注意：** `/workspaces/*`（含 `/:id/stats`）与 `/logs` 当前为 **JWT-only**，MCP 不依赖前者作 overview，本计划**不提供** `get_request_logs`。 |
 | **npm 包名** | §5.9 要求迁移至 `@alephant/mcp`；可与 `plan/2026-04-01-track1-npm-distribution.md` **合并提交**或在本计划 Task 末统一 `package.json`，避免两次改名冲突。 |
 
 **推荐并行顺序：** Cockpit 与 PAT 两份后端计划 **可同时开工**；MCP 双模式（本文件）宜在两端 **最小可用**（Cockpit：health+scope+usage-summary；PAT：发 token + 一条受 scope 保护的 GET）之后再做端到端联调。
+
+**Git 与工作目录：** 计划在路径上写 `alephant-mcp/...` 是为了父仓可读性。若你在 **`alephant-mcp` 仓库根目录**内开发（含作为 git submodule 检出时），`git add` / `git commit` 应使用**不带** `alephant-mcp/` 前缀的路径（例如 `git add src/auth package.json vitest.config.ts`）。父仓聚合提交时再在父仓 `git add alephant-mcp` 更新 submodule 指针。
 
 **与旧实现的差异（刻意行为）：**
 
@@ -33,12 +37,12 @@
 | 操作 | 路径 | 职责 |
 |------|------|------|
 | Create | `alephant-mcp/src/auth/types.ts` | `AuthMode`、`AuthEnvConfig` |
-| Create | `alephant-mcp/src/auth/detector.ts` | `detectAuthMode`：PAT 优先；两者皆无则 `process.exit(1)` 并 stderr 提示 |
+| Create | `alephant-mcp/src/auth/detector.ts` | `detectAuthMode`：PAT 优先；凭证缺失 **throw**（`index.ts` 捕获后 stderr + `process.exit(1)`） |
 | Create | `alephant-mcp/src/config/env.ts` | 集中读取 `ALEPHANT_*`（base URL、VK、PAT、WORKSPACE_ID、RATE_LIMIT_RPM） |
 | Modify / Replace | `alephant-mcp/src/config.ts` | 合并入 `env.ts` 或 re-export，避免双源 |
 | Create | `alephant-mcp/src/utils/rate-limiter.ts` | §5.8 `RateLimiter` + `globalRateLimiter` |
 | Create | `alephant-mcp/src/utils/safe-call.ts` | `safeCall`：限流 → try/catch → §5.4 映射；`mode: 'vk' \| 'manager'` |
-| Create | `alephant-mcp/src/clients/base-client.ts` | 创建 axios 实例、超时、统一 `acquire` 钩子（或由 safeCall 统一 acquire，二选一但全项目一致） |
+| Create | `alephant-mcp/src/clients/base-client.ts` | **定稿：** 仅创建 axios 实例、`baseURL`、超时、通用 response 拦截；**不在 client 层调用** `globalRateLimiter.acquire` — 限流 **唯一入口**为 `safeCall` 首行（与 Task 3 一致，避免双重 acquire） |
 | Create | `alephant-mcp/src/clients/cockpit-client.ts` | VK：`GET .../cockpit/*` 方法签名与 §4.5 JSON 类型 |
 | Create | `alephant-mcp/src/clients/manager-client.ts` | PAT：`Authorization: Bearer <pat>` + `X-Workspace-Id: <uuid>`（或项目既有 workspace 头名，与 SaaS 一致） |
 | Create | `alephant-mcp/src/tools/registry.ts` | `registerTools(server, mode, deps)` |
@@ -47,7 +51,7 @@
 | Create | `alephant-mcp/src/tools/vk/scope.ts` | `get_my_scope` |
 | Create | `alephant-mcp/src/tools/vk/budget.ts` | `get_my_budget`、`get_my_recent_requests` |
 | Create | `alephant-mcp/src/tools/manager/keys.ts` | virtual keys CRUD 工具 |
-| Create | `alephant-mcp/src/tools/manager/analytics.ts` | `get_workspace_overview`、`get_request_logs` |
+| Create | `alephant-mcp/src/tools/manager/analytics.ts` | `get_workspace_overview`（仅；**不**含 `get_request_logs`，本迭代不提供） |
 | Create | `alephant-mcp/src/tools/manager/agents.ts` | `list_agents`、`get_agent_analytics` |
 | Create | `alephant-mcp/src/tools/manager/departments.ts` | `list_departments`、`get_department_analytics` |
 | Create | `alephant-mcp/src/tools/manager/policies.ts` | `get_subscription_info`、`set_budget_policy` |
@@ -140,15 +144,24 @@ cd alephant-mcp && npx vitest run src/auth/detector.test.ts
 - [ ] **Step 5: 运行测试 GREEN**
 
 ```bash
+# 在父仓根目录时：
+cd alephant-mcp && npx vitest run src/auth/detector.test.ts
+
+# 在 alephant-mcp 子仓根目录时：
 npx vitest run src/auth/detector.test.ts
 ```
 
 预期：PASS。
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Commit**（在 **`alephant-mcp` 仓库根**执行时路径无 `alephant-mcp/` 前缀）
 
 ```bash
+# 在父仓根目录时：
 git add alephant-mcp/src/auth alephant-mcp/src/config/env.ts alephant-mcp/package.json alephant-mcp/package-lock.json alephant-mcp/vitest.config.ts
+
+# 在 alephant-mcp 子仓根目录时：
+git add src/auth src/config/env.ts package.json package-lock.json vitest.config.ts
+
 git commit -m "feat(mcp): add auth mode detection and env helpers"
 ```
 
@@ -184,7 +197,7 @@ it("rpm 0 skips waiting", async () => {
 
 **Files:**
 - Create: `alephant-mcp/src/utils/safe-call.ts`
-- Modify: `alephant-mcp/src/clients/base-client.ts`（可选：导出 `HttpError`）
+- Create: `alephant-mcp/src/clients/base-client.ts`（本 Task 内创建；见文件清单「定稿」：`base-client` 无 `acquire`，仅 axios 配置）
 
 - [ ] **Step 1: 定义 `HttpLikeError`**：`status?: number`、`headers?: Record<string,string>`、`code?: string`、`message`
 
@@ -210,6 +223,8 @@ it("rpm 0 skips waiting", async () => {
 
 - [ ] **Step 4: 手动 smoke**：`curl` 或临时 script（可选，不写入仓库）对 staging 验证 401 无效 VK。
 
+- [ ] **Step 4b（联调核对）：`health()`** — 确认 `GET /api/v1/cockpit/health` 与 §4.4 一致（通常 **无** `Authorization`）。若 `routes.go` / 全局中间件要求鉴权导致 401，在 Task 11「路径更正表」记一行并改 client 实现（与设计评审同步）。
+
 - [ ] **Step 5: Commit** `feat(mcp): add Cockpit HTTP client for VK mode`
 
 ---
@@ -223,7 +238,7 @@ it("rpm 0 skips waiting", async () => {
 
 - [ ] **Step 2: 默认头**：`Authorization: Bearer <pat>`；Workspace 头名称与 `backend-saas-service` 现有 JWT 流一致（常见为 `X-Workspace-Id`，以代码搜索为准）。
 
-- [ ] **Step 3: 封装方法**：`getWorkspaceStats(workspaceId)` → 设计文档 `GET /workspaces/:id/stats`（若实际路由为 `/api/v1/workspaces/...`，在 client 内写全路径）；同理 `listVirtualKeys`、`createVirtualKey`、`patchVirtualKeyBudget`、`revokeVirtualKey`、`listAgents`、`getAgentAnalytics`、`listDepartments`、`getDepartmentAnalytics`、`getSubscriptionCurrent`、`putBudgetPolicy`、`getLogs`、`getAnalyticsCosts` 等——**实现前在 backend-saas-service `internal/api/routes` grep 真实 path**，在计划执行记录中更正表格。
+- [ ] **Step 3: 封装方法**：`getWorkspaceOverview()` → **`GET /api/v1/analytics/overview`**（PAT + `X-Workspace-Id`；**不要**用 `GET /api/v1/workspaces/:id/stats`，该路由为 JWT-only）。同理封装 `getAnalyticsCosts` / `getAnalyticsUsage` 等（与共享工具 `period` 映射一致时复用同一 client 方法）。**不包含** `getLogs`：本计划不提供 `get_request_logs`。其余：`listVirtualKeys`、`createVirtualKey`、`patchVirtualKeyBudget`、`revokeVirtualKey`、`listAgents`、`getAgentAnalytics`、`listDepartments`、`getDepartmentAnalytics`、`getSubscriptionCurrent`、`putBudgetPolicy`——**以 `routes.go` grep 为准**。
 
 - [ ] **Step 4: Commit** `feat(mcp): add manager API client for PAT mode`
 
@@ -236,11 +251,11 @@ it("rpm 0 skips waiting", async () => {
 - Create: `alephant-mcp/src/tools/shared/usage.ts`
 - Create: `alephant-mcp/src/tools/shared/models.ts`
 
-- [ ] **Step 1: `registerTools`**：`vk` 注册 4 共享 + 3 VK 专属；`manager` 注册 4 共享 + 12 管理者；工具名与 §5.3 **完全一致**（snake_case）。
+- [ ] **Step 1: `registerTools`**：`vk` 注册 4 共享 + 3 VK 专属；`manager` 注册 4 共享 + **11** 管理者（**不含** `get_request_logs`）；其余工具名与 §5.3 **完全一致**（snake_case），**除**已移除项。
 
 - [ ] **Step 2: 共享工具实现**：`get_usage_summary` / `get_daily_costs` / `get_cost_by_model` — VK 分支仅调 `cockpitClient` 对应 §4.4 端点；manager 分支调 `managerClient` 的 analytics 封装（参数 `period` 枚举与设计一致：`24h|7d|30d|billing_cycle` 等）。
 
-- [ ] **Step 3: `list_available_models`（易错点）**：§5.3 写明 VK 与管理者后端均为 **`/models`**（即 `GET {baseURL}/api/v1/models` 或 grep 得到的真实路径），**不是** `/api/v1/cockpit/*`。实现方式任选其一且须代码审查：**(a)** 在 `CockpitClient` 同文件增加 `listModels()` 但内部请求路径为 `/api/v1/models`（与 cockpit 子路径并列，不拼在 `cockpit` 下）；**(b)** 在 `ManagerClient` 与 VK 侧各用独立 `axios.get(\`${base}/api/v1/models\`)`**。**禁止**写成 `GET /api/v1/cockpit/models`。manager 模式若 SaaS 要求 workspace 头，与 `ManagerClient` 默认头一致。
+- [ ] **Step 3: `list_available_models`（易错点）**：§5.3 写明 VK 与管理者后端均为 **`/models`**（即 `GET {baseURL}/api/v1/models` 或 grep 得到的真实路径），**不是** `/api/v1/cockpit/*`。**定稿实现：** 在 `src/tools/shared/models.ts` 使用独立请求函数（可复用 `base-client`），VK 与 manager 分别按各自认证头调用同一路径；**不要**把该方法并入 `CockpitClient` 的 `/cockpit/*` 方法集。**禁止**写成 `GET /api/v1/cockpit/models`。manager 模式若 SaaS 要求 workspace 头，与 `ManagerClient` 默认头一致。
 
 - [ ] **Step 4: Commit** `feat(mcp): register shared and mode-specific tools`
 
@@ -258,7 +273,7 @@ it("rpm 0 skips waiting", async () => {
 
 - [ ] **Step 3: `create_virtual_key` 等**：字段校验与设计表格一致。
 
-- [ ] **Step 4: Commit** `feat(mcp): implement all 19 tools`
+- [ ] **Step 4: Commit** `feat(mcp): add vk and manager tool modules (zod + safeCall)`（说明：18 个工具名与注册在 Task 6 已完成；本 Task 为按文件拆分与入参校验落地。）
 
 ---
 
@@ -269,10 +284,11 @@ it("rpm 0 skips waiting", async () => {
 - Create: `alephant-mcp/src/prompts/optimization.ts`
 - Create: `alephant-mcp/src/resources/model-catalog.ts`
 - Create: `alephant-mcp/data/model-catalog.json`
+- Create: `alephant-mcp/src/prompts/register.ts`、`alephant-mcp/src/resources/register.ts` — 导出 `registerPrompts(server, mode)`、`registerResources(server)`（或等价命名），**避免** `index.ts` 堆叠具体 `server.prompt` / `server.resource` 注册细节。
 
 - [ ] **Step 1: `cost_audit_report`**：指导调用 `get_usage_summary`、`get_daily_costs`、`get_cost_by_model`、VK 时加 `get_my_budget` 等（§5.5）。
 
-- [ ] **Step 2: `cost_optimization`**：仅 `manager` 模式注册（§5.5）。
+- [ ] **Step 2: `cost_optimization`**：仅 `manager` 模式注册（§5.5）。**勿**在文案中引导调用 `get_request_logs`（本迭代未提供该工具）。
 
 - [ ] **Step 3: Resource `model-catalog`**：`listResources` / `readResource` 返回静态 JSON（路径 `data/model-catalog.json`）。
 
@@ -285,11 +301,11 @@ it("rpm 0 skips waiting", async () => {
 **Files:**
 - Replace: `alephant-mcp/src/index.ts`
 
-- [ ] **Step 1:** `detectAuthMode` → 创建对应 client → `registerTools` + `registerPrompts` + `registerResources` → `StdioServerTransport`。
+- [ ] **Step 1:** `detectAuthMode` → 创建对应 client → `registerTools` + `registerPrompts` / `registerResources`（见 Task 8 新增注册文件）→ `StdioServerTransport`。
 
 - [ ] **Step 2:** 移除所有 Mock 分支；版本号与 `package.json` 对齐。
 
-- [ ] **Step 3:** `--audit`：VK 模式调用 `cockpit/scope` + `usage-summary` 打印一行摘要；manager 模式打印 workspace id + `get_workspace_overview` 或等价（若失败打印错误）。
+- [ ] **Step 3:** `--audit`：VK 模式调用 `cockpit/scope` + `usage-summary` 打印一行摘要；manager 模式打印 workspace id + **`GET /api/v1/analytics/overview`**（经 `get_workspace_overview` / `ManagerClient`；若失败打印错误）。
 
 - [ ] **Step 4: Build**
 
@@ -323,7 +339,18 @@ cd alephant-mcp && npm run build
 
 - [ ] **Step 2:** 使用 `@modelcontextprotocol/inspector` 或 Cursor MCP 对 VK / PAT 各跑一遍 §6.3 中与 MCP 相关的子集（401/403/429 依赖后端，可标记为联调项）。
 
-- [ ] **Step 3:** 在计划末尾或 issue 记录「后端路径更正表」（若 grep 结果与设计假名不一致）。
+- [ ] **Step 3:** 在计划文末「后端路径更正表」或独立 issue 记录与 §5.3 不一致项（`routes.go` grep 结果为准）。
+
+- [ ] **Step 4（联调核对）：VK + `GET /api/v1/models`** — 仅用 `Authorization: Bearer <vk>`（无 `X-Workspace-Id`）能否 200；若中间件要求 workspace 头，在「路径更正表」注明并在 `list_available_models` 实现中补齐（与 Task 6 选项 (a)/(b) 一致）。
+
+---
+
+## 后端路径更正表（实现时填写）
+
+| 设计/计划中的路径或假设 | `routes.go` / 实测结论 | MCP 代码调整 |
+|-------------------------|-------------------------|--------------|
+| （示例）`/api/v1/cockpit/health` 无 Auth | 若需 Auth → | `health()` 补头或改文档 |
+| （示例）VK 访问 `/api/v1/models` | 若 403 → | 补头或走 BFF |
 
 ---
 
@@ -357,3 +384,9 @@ cd alephant-mcp && npm run build
 **修订摘要：** Task 1 增补 `vitest.config.ts` 创建步骤与 Step 6 Commit、`detectAuthMode` 仅 throw（`exit` 仅限 `index.ts`）、PAT 缺 `ALEPHANT_WORKSPACE_ID` 单测；Architecture 标明 `index` 承担 §5.1 `server.ts` 职责、`list_available_models` 非 cockpit；Task 4 明确 CockpitClient **不含** `GET /models`；Task 6 写死 `list_available_models` 须 `GET /api/v1/models`（禁止 `/cockpit/models`）；Task 3 的 **403** 与 §5.4 **单一**英文句对齐；`smithery.yaml` 交叉引用 `plan/2026-04-01-track1-npm-distribution.md`。
 
 **当前状态：** 可开工（修订后的计划无阻塞性缺口；实现时仍以 SaaS 真实路由 grep 为准）。
+
+**2026-04-01 二次修订（与 `backend-saas-service` 路由对齐）：** `get_workspace_overview` → `GET /api/v1/analytics/overview`（PAT 可用）；**暂不提供** `get_request_logs`（`/logs` 为 JWT-only）；工具总数 **18**（与 `docs/2026-03-31-alephant-mcp-dual-mode-design.md` §5.3 一致）。
+
+**2026-04-01 三次修订（计划可执行性）：** 增补 **Git 与子仓路径**说明；文件清单与 Task 3 **定稿**「限流仅在 `safeCall`」、`base-client` 本 Task 创建；Task 4 **health 联调核对**；Task 7 commit 文案与 Task 6 职责区分；Task 8/9 **prompts/resources barrel**；Task 11 **VK + `/models` 联调**；新增文末 **后端路径更正表**模板。
+
+**2026-04-01 四次修订（最终一致性）：** Task 6 `list_available_models` 实现收敛为 **shared 独立请求函数**（不并入 `CockpitClient` `/cockpit/*` 方法集）；Task 8 将 `prompts/register.ts` 与 `resources/register.ts` 从“推荐”提升为“必建”；Task 9 同步改为调用上述注册入口，消除“推荐/必选”表述分叉。
