@@ -1,24 +1,32 @@
 {
-  "name": "@gengbingbing/alephant-mcp",
-  "version": "1.0.3",
+  "name": "@alephantai/mcp",
+  "version": "0.0.4",
   "type": "module",
   "main": "index.js",
   "bin": {
-    "alephant-mcp": "dist/index.js"
+    "alephant-mcp": "./bin/alephant-mcp.js"
   },
   "files": [
-    "dist"
+    "bin",
+    "dist",
+    "data"
   ],
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "publish": "npm publish --access public",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node ./bin/alephant-mcp.js",
+    "test": "vitest run"
   },
-  "keywords": [],
+  "keywords": ["mcp", "alephant", "finops", "ai-cost", "llm-observability"],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Alephant MCP Server — query AI spend, manage virtual keys and policies from your AI IDE",
+  "homepage": "https://alephant.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlephantAI/alephant-mcp"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "axios": "^1.13.6",
@@ -26,6 +34,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.4.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.2"
   }
 }

@@ -1,55 +1,122 @@
-## **📄 Module 1: English Version (README.en.md)**
+# Alephant MCP Server
 
-# **🐘 Alephant MCP Server \- AI FinOps Governance**
+Model Context Protocol server for **Alephant BYO-KEY**: FinOps metrics, virtual keys, and workspace analytics from Cursor, Claude Desktop, or any MCP host.
 
-The **Alephant MCP Server** is a developer-centric infrastructure tool designed to integrate AI cost management directly into your IDE (like Cursor). By implementing the **Model Context Protocol (MCP)**, it transforms your AI agent from a "code generator" into a "financially aware architect."
+## Modes
 
-### **🛠 Core Capabilities**
+| Mode | Environment | Tools |
+|------|-------------|--------|
+| **VK** | `ALEPHANT_VIRTUAL_KEY` | Cockpit-scoped usage + 3 VK tools (7 tools total incl. shared) |
+| **Manager** | `ALEPHANT_PAT` + `ALEPHANT_WORKSPACE_ID` | Workspace-wide management (15 tools total incl. shared) |
 
-* **Budget Guardrails**: Real-time tracking of token consumption and remaining balance.  
-* **Identity Attribution**: Mapping every AI request to specific agents (e.g., Axpha-Trader) or departments.  
-* **Active Intervention**: Programmatic model downgrading or request blocking based on cost policies.  
-* **Automated Auditing**: Built-in prompts for generating professional weekly, monthly, and quarterly reports.
+PAT takes precedence when `ALEPHANT_PAT` is non-empty. If neither VK nor PAT is set, the process exits with an error (no mock data).
 
----
+**Required (both modes):** `ALEPHANT_API_BASE_URL`  
+**Optional:** `ALEPHANT_RATE_LIMIT_RPM` (default `60`, use `0` to disable client-side throttling)
 
-### **🚀 Getting Started**
+### Windows / `npx` troubleshooting
 
-#### **1\. Installation**
+**From this repo’s root (`alephant-mcp/`):** do **not** use `npx -y @alephantai/mcp` to “smoke test” the published package. npm treats the current directory as the local `@alephantai/mcp` project and does **not** link the root package’s `bin` into `node_modules/.bin`, so Windows then fails with `'alephant-mcp' is not recognized` (or the Chinese CMD equivalent).
 
-This package is distributed via NPM for seamless integration using npx.
+Use one of these instead while developing in the clone:
 
-Bash  
-npm install \-g @gengbingbing/alephant-mcp
+```powershell
+npm start
+# or
+node .\bin\alephant-mcp.js
+```
 
-#### **2\. Cursor Integration**
+To verify `npx` the same way end users do, run it from **any other directory** (e.g. the parent folder):
 
-To enable the "Antigravity Cockpit" in Cursor:
+```powershell
+cd ..
+npx -y @alephantai/mcp
+```
 
-1. Go to **Cursor Settings** \-\> **Features** \-\> **MCP**.  
-2. Click **\+ Add New MCP Server**.  
-3. Fill in the details:  
-   * **Name**: Alephant  
-   * **Type**: command  
-   * **Command**: npx \-y @gengbingbing/alephant-mcp  
-4. Verify that the status light turns **Green**.
+**From a normal project folder** (after `npm install @alephantai/mcp`), you can also run:
 
----
+```powershell
+node .\node_modules\@alephantai\mcp\bin\alephant-mcp.js
+```
 
-### **🤖 Usage Scenarios**
+If `npx -y @alephantai/mcp` still fails outside the clone, try:
 
-| User Intent | Suggested Prompt |
-| :---- | :---- |
-| **Check Health** | "Alephant, what's our current budget status?" |
-| **List Agents** | "Show me all active virtual keys and their daily limits." |
-| **Enforce Policy** | "If the budget exceeds 80%, switch Axpha-Trader to low-cost mode." |
-| **Generate Report** | "Generate a weekly cost audit report for workspace Axpha-Main." |
+```powershell
+npx --yes --package=@alephantai/mcp alephant-mcp
+```
 
----
+Published packages **0.0.2+** include the `bin/alephant-mcp.js` shim for reliable npm bin resolution when installed from the registry.
 
-### **📅 Proactive Scheduling**
+## Cursor / Claude config
 
-Alephant supports scheduled "Mission Control" style push reports.
+**Virtual Key (read-only / scoped cockpit):**
 
-* **AI Scheduler**: Ask the AI: *"Schedule a weekly Alephant audit every Monday at 9 AM."*  
-* **Local Cron**: Add 0 9 \* \* 1 npx @gengbingbing/alephant-mcp \--audit \>\> ./AUDIT.md to your crontab.
+```json
+{
+  "mcpServers": {
+    "alephant": {
+      "command": "npx",
+      "args": ["-y", "@alephantai/mcp"],
+      "env": {
+        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_VIRTUAL_KEY": "vk-..."
+      }
+    }
+  }
+}
+```
+
+**Personal Access Token (manager):**
+
+```json
+{
+  "mcpServers": {
+    "alephant-workspace-a": {
+      "command": "npx",
+      "args": ["-y", "@alephantai/mcp"],
+      "env": {
+        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_PAT": "pat_...",
+        "ALEPHANT_WORKSPACE_ID": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}
+```
+
+Use **separate `mcpServers` entries** per workspace when you have multiple PATs.
+
+## CLI audit
+
+```bash
+npx --yes --package=@alephantai/mcp alephant-mcp --audit
+```
+
+- **VK:** prints cockpit `scope` + `usage-summary` (billing cycle).  
+- **Manager:** prints workspace id + `GET /api/v1/analytics/overview`.
+
+## Tools (summary)
+
+Shared (both modes): `get_usage_summary`, `get_daily_costs`, `get_cost_by_model`, `list_available_models`  
+VK only: `get_my_scope`, `get_my_budget`, `get_my_recent_requests`  
+Manager only: `get_workspace_overview`, `list_virtual_keys`, `create_virtual_key`, `update_key_budget`, `revoke_virtual_key`, `list_agents`, `get_agent_analytics`, `list_departments`, `get_department_analytics`, `get_subscription_info`, `set_budget_policy`
+
+`get_request_logs` is **not** included (JWT-only backend route).
+
+## Prompts & resources
+
+- **cost_audit_report** — both modes  
+- **cost_optimization** — manager only  
+- **model-catalog** — static JSON resource (`data/model-catalog.json`)
+
+## Development
+
+```bash
+npm install
+npm test
+npm run build
+```
+
+## Package
+
+Published as **`@alephantai/mcp`** (`alephant-mcp` binary).
