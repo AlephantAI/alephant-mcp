@@ -255,7 +255,6 @@ VK 认证
 | GET | `/api/v1/cockpit/daily-costs` | scope 内的每日成本序列 |
 | GET | `/api/v1/cockpit/cost-by-model` | scope 内按模型分组的成本 |
 | GET | `/api/v1/cockpit/budget-status` | VK/Entity 的预算使用情况 |
-| GET | `/api/v1/cockpit/recent-requests` | 最近的请求日志 |
 
 ### 4.5 端点详细契约
 
@@ -342,27 +341,6 @@ VK 认证
     "spent_cents": 12800,
     "usage_pct": 25.6
   }
-}
-```
-
-**GET `/api/v1/cockpit/recent-requests?limit=20&offset=0`**
-
-```json
-{
-  "data": [
-    {
-      "id": "uuid",
-      "timestamp": "2026-03-31T14:22:31Z",
-      "model": "gpt-4o",
-      "provider": "openai",
-      "input_tokens": 1240,
-      "output_tokens": 380,
-      "cost_cents": 4.2,
-      "latency_ms": 1230,
-      "status": "success"
-    }
-  ],
-  "pagination": { "total": 1247, "limit": 20, "offset": 0 }
 }
 ```
 
