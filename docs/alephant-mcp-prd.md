@@ -1,117 +1,239 @@
-# Alephant MCP Server — 产品需求文档（PRD）
 
-**版本**: 1.0  
-**日期**: 2026-03-10  
-**范围**: alephant-mcp（@gengbingbing/alephant-mcp，MCP 服务）  
-**参考**: 项目规范 `.cursor/rules/project.mdc`、Cockpit API 规范 `docs-dev/plans/2026-03-10-alephant-cockpit-api-spec.md`、MCP 源码分析 `docs-dev/plans/2026-03-10-alephant-mcp-analysis.md`
+# **ALEPHANT**
 
----
+## **AI FinOps 网关**
 
-## 1. 产品概述
+## **MCP 服务器技术指南**
 
-### 1.1 定位
+**构建 Alephant MCP 服务器：架构、工具、技术栈、代码结构及部署指南**
 
-**Alephant MCP Server** 是 Alephant BYO-KEY 平台在 IDE 内的 **AI 对话侧** 延伸：通过 **Model Context Protocol (MCP)** 暴露 FinOps 工具与审计 Prompt，让 Cursor 等 IDE 中的 AI 能够「查预算、列密钥、下策略、出报告」，与侧边栏 **Alephant Cockpit**（人看面板、人点按钮）互补。
+**2026 年 2 月 28 日**
 
-- **一句话**: 企业级 AI FinOps 的 MCP 服务——让 AI 具备成本感知与策略执行能力。
-- **与主产品关系**: 与 Cockpit 共用 **SaaS 聚合 API**（/api/cockpit/*）；数据与策略经 SaaS 拉取/下发，不直连 policy-service、ai-gateway 或数据库。
-
-### 1.2 目标用户
-
-| 用户类型 | 使用场景 | 价值 |
-|----------|----------|------|
-| 在 Cursor 内用 AI 的开发者 | 在对话中问「我们预算还剩多少」「把某 Agent 切到低成本」 | 无需切到 Cockpit 或浏览器，由 AI 直接调 MCP 工具 |
-| 团队/部门负责人 | 让 AI「生成一份本周成本审计报告」 | 通过 cost_audit_report Prompt 自动链式调用 tool 并输出 Markdown |
-| 运维/自动化 | 用 crontab 执行 `alephant-mcp --audit` 做定时审计占位 | 命令行模式可扩展为真实拉数并写文件 |
-
-### 1.3 核心价值
-
-- **对话内 FinOps**：在写代码、问 AI 的同一会话中完成预算查询与策略下发，无需离开 IDE。
-- **与 Cockpit 能力一致**：同一批后端接口与鉴权，用户可选「看面板」或「问 AI」两种入口。
-- **可编排的审计**：通过 Prompt 模板固定「先查预算 → 再列密钥 → 再诊断 → 出报告」的流程，降低使用门槛。
+**机密 — 仅限内部使用**
 
 ---
 
-## 2. 功能需求
+## **1\. 什么是 MCP 以及为什么要为 Alephant 构建它**
 
-### 2.1 Tools（P0）
+## **1.1 什么是 MCP**
 
-| 工具名 | 参数 | 行为 | 数据来源（目标状态） |
-|--------|------|------|----------------------|
-| **get_budget_status** | workspaceId, department? | 返回剩余预算、已耗、环比、最大消耗源、状态的文本摘要 | GET `/api/cockpit/dashboard` + GET `/api/cockpit/live-metrics`；未对接时可为 Mock |
-| **list_virtual_keys** | workspaceId | 返回工作区内虚拟密钥/归因列表（id、agent、model、限额、用量等） | GET `/api/cockpit/workspaces` + dashboard.attributionItems 或后端虚拟密钥列表接口 |
-| **apply_cost_policy** | keyId, policy | 对指定密钥或当前 scope 执行 block / low-cost / restore | POST `/api/cockpit/policy`，body `{ action }`；未对接时可为占位文案 |
+**模型上下文协议 (Model Context Protocol, MCP)** 是 Anthropic 在 2024 年底创建的一种开放标准，它定义了 AI 助手如何与外部工具和数据源进行通信。它为 AI 模型提供了一种标准化的方式来发现、理解和使用外部功能，而无需进行自定义集成。
 
-- **统一错误**：所有 tool 在异常时返回 `content[].text` 含简短原因 + `isError: true`，便于 AI 给出明确失败说明。
-- **Tool 描述**：每个 tool 的 schema 与 describe 需便于 AI 理解用途与参数，建议英文说明 + 示例。
+你可以把 MCP 想象成 **AI 界的通用插件系统**。就像 USB-C 让你可以用一根线连接任何设备和电脑一样，MCP 让任何 AI 工具都能通过一种协议连接到任何服务。AI 工具（称为“宿主”或“客户端”）会发现你的服务器能做什么，并在用户需要时调用这些功能。
 
-### 2.2 Prompts（P0）
+## **1.2 为什么这对 Alephant 至关重要**
 
-- **cost_audit_report**  
-  - 参数：period（weekly/monthly/quarterly）、workspaceId（默认 Axpha-Main）。  
-  - 行为：返回一条 user 消息，指导 AI 依次调用 get_budget_status、list_virtual_keys，结合数据诊断（如环比 >10% 警告），并输出 Markdown 报告（核心结论、消耗画像、风险与建议）。  
-  - 价值：用户说「生成周报」即可触发，无需记忆 tool 调用顺序。
+构建 Alephant MCP 服务器意味着，开发者在使用 **Claude Desktop、Cursor、Windsurf、VS Code Copilot、ChatGPT** 或任何其他兼容 MCP 的工具时，都可以使用自然语言与他们的 Alephant 控制面板进行交互。他们无需切换到浏览器查看成本，只需直接询问 AI 助手。
 
-### 2.3 配置与鉴权（P0）
+**真实场景案例**
 
-- **配置**  
-  - **API Base URL**：环境变量 `ALEPHANT_API_BASE_URL`（或等价），与 Cockpit 的 `alephant.apiBaseUrl` 对齐；未配置且非 Mock 时 tool 返回明确提示。  
-  - **凭证**：支持 **User Token** 或 **Virtual Key**；环境变量 `ALEPHANT_TOKEN` 或 `ALEPHANT_VIRTUAL_KEY`（或由 Cursor MCP 的 env 注入）。请求后端时带 `Authorization: Bearer <token>` 或 `X-Alephant-Virtual-Key: <key>`。  
-  - **Mock 开关**：未配置 Base URL 或 `ALEPHANT_USE_MOCK=true` 时使用内存 Mock，便于本地与演示。
+一名开发者正在 Cursor 中编写代码，想要检查 AI 支出。他输入：“我这周在 GPT-4 上花了多少钱？” —— Cursor 调用 Alephant MCP 服务器，服务器查询 Alephant API 并返回：“您本周在 GPT-4 上通过 1,247 次请求共花费了 47.23 美元，比上周减少了 12%。” **无需切换标签页，无需登录后台，在工作流中即时获取答案。**
 
-- **鉴权与 Cockpit 一致**：双模式、同一套后端接口；用户可同一密钥既调网关又调 MCP/Cockpit。
+## **1.3 MCP 架构的工作原理**
 
-### 2.4 命令行模式（P1）
+MCP 采用客户端-服务器架构，分为三层：
 
-- **--audit**  
-  - 执行 `npx @gengbingbing/alephant-mcp --audit` 时不启动 MCP，而是执行「审计」逻辑：可调用 get_budget_status + list_virtual_keys（真实或 Mock），将结果输出到 stdout 或指定文件，便于 crontab 定时审计。  
-  - 当前可为占位输出；对接真实 API 后输出真实摘要或 Markdown。
+| 组件 | 定义 | 示例 |
+| :---- | :---- | :---- |
+| **MCP 宿主 (Host)** | 开发者使用的 AI 应用程序 | Claude Desktop, Cursor, Windsurf, VS Code Copilot, ChatGPT |
+| **MCP 客户端 (Client)** | 内置于宿主中；连接到 MCP 服务器 | 由宿主应用程序自动管理 |
+| **MCP 服务器 (Server)** | 暴露 Alephant 功能的服务器 | 我们正在构建的 alephant-mcp 服务器 |
 
-### 2.5 扩展性与可维护性（P1）
+**通信流程如下：**
 
-- **Client 抽象**：所有请求后端的能力经统一 Client（如 getDashboard、getLiveMetrics、applyPolicy），tool 仅做参数校验与结果转 MCP content；便于 Mock/真实切换与与 Cockpit 共享逻辑。  
-- **结构**：当前单文件可保留；tool 增多时可拆为 `src/tools/`、`src/prompts/`、`src/client/`，并可选暴露 **Resources**（如 `alephant://workspace/{id}/policy-state`）供 AI 只读。  
-- **文档与版本**：README 写清安装、Cursor 配置、环境变量；CHANGELOG 随版本记录变更；tool 与 Prompt 的 describe 便于 AI 与人类理解。
+1. 开发者在 AI 工具中提出问题（如：“检查我的 AI 支出”）。  
+2. AI 模型识别出需要外部数据，并调用相应的 MCP 工具。  
+3. MCP 客户端将请求发送给 Alephant MCP 服务器。  
+4. Alephant MCP 服务器查询 Alephant API 并返回结构化数据。  
+5. AI 模型格式化响应并展示给开发者。
 
-### 2.6 数据与策略边界（必须遵守）
+## **1.4 MCP 服务器功能**
 
-- **数据来源**：仅通过 **SaaS 聚合 API**（/api/cockpit/*）或 gateway-data-warehouse 只读查询获取；不直接连接 ClickHouse/PostgreSQL。  
-- **策略执行**：经 **SaaS 后端 API**（POST /api/cockpit/policy）下发，由 SaaS 写库并推送 policy-service；MCP **不直接调用 policy-service 或网关**。
+MCP 服务器可以暴露三种类型的功能：
 
----
+| 功能 | 作用 | Alephant 应用场景 |
+| :---- | :---- | :---- |
+| **工具 (Tools)** | AI 可以执行的函数（动作、查询、副作用） | 获取用量数据、创建 API 密钥、设置告警 —— **这是我们要构建的 90% 内容** |
+| **资源 (Resources)** | 客户端可以向用户或模型展示的只读数据 | 当前价格列表、模型目录、账户设置 |
+| **提示词 (Prompts)** | 预写的模板，帮助用户完成特定任务 | “成本优化报告”提示词，自动拉取所有相关数据 |
 
-## 3. 非功能需求
+对于 Alephant，我们将主要构建 **工具**（核心功能）和少量 **资源**（只读参考数据，如模型目录）。
 
-- **运行时**：Node.js 18+；通过 `npx -y @gengbingbing/alephant-mcp` 即跑，无需全局安装。  
-- **传输**：MCP 使用 StdioServerTransport，与 Cursor 通过 stdin/stdout 通信。  
-- **依赖**：@modelcontextprotocol/sdk、zod、axios（对接真实 API 时使用）；构建为 tsc 直出，发布仅含 dist。  
-- **易用性**：安装与 Cursor 配置步骤简单；未配置凭证时错误信息明确；所有 tool 错误返回格式统一。
+## **1.5 2026 年 MCP 的规模**
+
+MCP 的采用正处于爆发式增长中。截至 2026 年初，社区构建的 MCP 服务器已超过 8,600 个。几乎所有主流 AI 工具都支持 MCP。这意味着构建一个 MCP 服务器，就能让 Alephant 同时分发到所有这些平台。
 
 ---
 
-## 4. 数据层与 API 依赖
+## **2\. 技术栈与要求**
 
-- **接口契约**：与 Cockpit 一致，见 `docs-dev/plans/2026-03-10-alephant-cockpit-api-spec.md` 与 backend-saas PRD §5.13。  
-- **MCP 与 API 映射**：  
-  - get_budget_status → GET dashboard + live-metrics  
-  - list_virtual_keys → GET workspaces + 归因/虚拟密钥数据（dashboard.attributionItems 或后端专项接口）  
-  - apply_cost_policy → POST /api/cockpit/policy  
-- **鉴权**：User Token（Bearer）或 Virtual Key（Bearer / X-Alephant-Virtual-Key）；与 Cockpit 双模式一致。
+## **2.1 语言选择：TypeScript**
+
+推荐使用 **TypeScript**。官方 MCP SDK 以 TypeScript 为主，Alephant 产品本身也基于 JavaScript，开发者社区更倾向于使用 TypeScript 构建工具。官方 SDK 在 npm 上发布为 @modelcontextprotocol/sdk。
+
+## **2.2 核心依赖包**
+
+| 包名 | 用途 | 版本说明 |
+| :---- | :---- | :---- |
+| @modelcontextprotocol/sdk | 官方 SDK —— 构建服务器的核心框架 | 生产环境推荐 v1.x (稳定版) |
+| zod | 输入验证库 —— SDK 的强制依赖 | v3.25+ 以保证兼容性 |
+| express | Web 服务框架 —— 用于远程 HTTP 传输 | 配合 SDK 的 Express 中间件使用 |
+| @modelcontextprotocol/express | 官方 SDK 的 Express 适配器 | 将 MCP 接入 Express 的薄封装层 |
+| dotenv | 环境变量管理 | 用于管理 API 密钥 |
+| express-rate-limit | 频率限制中间件 | 防止远程 HTTP 端点被滥用 |
+
+## **2.3 传输选项 (Transport)**
+
+MCP 服务器通过“传输层”与客户端通信。支持以下两种方式：
+
+| 传输方式 | 工作原理 | 适用场景 | Alephant 的应用 |
+| :---- | :---- | :---- | :---- |
+| **Stdio (本地)** | 运行在本地机器，通过 stdin/stdout 通信。 | 本地开发、个人设置、CLI 工具 | 发布到 npm 供开发者通过 npx 安装 |
+| **Streamable HTTP (远程)** | 运行在服务器上，支持双向通信。 | 团队部署、生产环境、托管服务 | 部署在 mcp.alephant.ai |
+
+**关于 SSE 的重要说明**
+
+旧的 SSE (Server-Sent Events) 传输现已被视为遗留技术。MCP 规范已于 2025 年 3 月转向 **Streamable HTTP**。它使用单一 /mcp 端点，简化了实现和部署。
+
+## **2.4 开发工具**
+
+* **MCP Inspector**：调试工具，用于手动调用工具并查看响应。  
+* **Claude Desktop**：主要的测试环境。通过修改 claude\_desktop\_config.json 进行实战测试。  
+* **Cursor / Windsurf**：验证跨客户端兼容性的辅助环境。  
+* **tsx**：开发时直接运行 TypeScript 文件的工具。
+
+## **2.5 身份验证**
+
+开发者提供其 Alephant API 密钥进行身份验证：
+
+* **Stdio 传输**：通过环境变量 (ALEPHANT\_API\_KEY) 传递。简单且安全，因为密钥留在开发者本地。  
+* **远程 HTTP 传输**：使用 **OAuth 2.1**。MCP 规范包含标准的验证流程，开发者可以直接登录 Alephant 账户。
+
+**认证建议：** 第 1-2 周先实现 API 密钥认证（针对 stdio 版本），第 3-4 周为远程 HTTP 版本添加 OAuth 2.1。
 
 ---
 
-## 5. 范围外（Out of Scope）
+## **3\. 为 Alephant 构建的 MCP 工具**
 
-- 不替代 SaaS Web 管理端或 Cockpit 的完整配置与可视化。  
-- 不直接连接 policy-service、ai-gateway、ClickHouse/PostgreSQL。  
-- 不实现 MCP 之外的传输（如 HTTP 暴露 MCP）；当前仅 stdio。  
-- 插件内 OAuth/登录由 Cockpit 负责；MCP 仅通过环境变量或 Cursor 注入的凭证调用后端。
+我们推荐构建 12 个工具，分为 4 个类别。
+
+## **3.1 类别 1：成本与用量工具【优先级：极高】**
+
+这是最核心的价值点，覆盖 80% 的交互场景。
+
+* **工具 1：get\_usage\_summary** —— 获取特定时段的总成本、Token 数和请求数。  
+* **工具 2：get\_cost\_by\_model** —— 比较不同 AI 模型和供应商的支出。  
+* **工具 3：get\_daily\_costs** —— 获取每日成本明细以进行趋势分析。  
+* **工具 4：get\_request\_logs** —— 检索最近的 API 请求日志（含延迟、成本等）。
+
+## **3.2 类别 2：密钥管理工具【优先级：高】**
+
+对管理多个项目或客户的团队非常有价值。
+
+* **工具 5：list\_virtual\_keys** —— 列出所有虚拟 API 密钥及其状态和用量。  
+* **工具 6：create\_virtual\_key** —— 创建带有预算和频率限制的新虚拟密钥。  
+* **工具 7：update\_key\_budget** —— 更新现有虚拟密钥的支出上限。  
+* **工具 8：revoke\_virtual\_key** —— 立即停用某个虚拟密钥。
+
+## **3.3 类别 3：模型与路由工具【优先级：中】**
+
+利用 Alephant 的智能路由和多模型支持能力。
+
+* **工具 9：list\_available\_models** —— 列出所有可用模型及其价格。  
+* **工具 10：get\_model\_status** —— 检查供应商或模型的实时可用性和性能。  
+* **工具 11：update\_fallback\_config** —— 设置或更新自动故障转移的模型后备链。
+
+## **3.4 类别 4：告警与设置【优先级：低】**
+
+* **工具 12：set\_budget\_alert** —— 当支出达到阈值时，创建通知告警。
 
 ---
 
-## 6. 附录与参考
+## **4\. 项目结构与代码组织**
 
-- **MCP 源码与扩展性/易用性分析**：`docs-dev/plans/2026-03-10-alephant-mcp-analysis.md`  
-- **Cockpit API 规范**：`docs-dev/plans/2026-03-10-alephant-cockpit-api-spec.md`  
-- **后端 Cockpit 接口（§5.13）**：`docs-dev/backend-saas-prd-for-interface-737.md`  
-- **项目全局规范**：`.cursor/rules/project.mdc`
+## **4.1 文件夹结构**
+
+建议采用模块化组织方式：
+
+Plaintext  
+alephant-mcp/  
+├── src/  
+│   ├── index.ts           ← 入口：注册工具，启动服务  
+│   ├── server.ts          ← McpServer 实例配置  
+│   ├── tools/             ← 按类别划分工具逻辑  
+│   │   ├── usage.ts  
+│   │   └── keys.ts  
+│   ├── api-client.ts      ← 统一的 Alephant API HTTP 客户端  
+│   └── types.ts           ← TypeScript 接口定义  
+├── Dockerfile             ← 用于远程部署  
+└── README.md              ← 安装与使用文档
+
+## **4.2 核心架构决策**
+
+1. **工具注册与逻辑分离**：每个工具文件导出注册函数，保持 index.ts 整洁。  
+2. **统一 API 客户端**：在 api-client.ts 中统一处理重试、错误处理和鉴权。  
+3. **使用 Zod 进行输入验证**：为每个工具定义 Schema，实现自动验证和类型推断。  
+4. **描述性的名称和说明**：AI 根据工具的 description 决定调用哪个工具，这是提高准确率的关键。  
+5. **返回结构化数据**：工具应返回 JSON 对象，让 AI 模型根据语境决定如何向用户展示数据。
+
+## **4.3 错误处理模式**
+
+当工具操作失败时，应在响应中返回 isError: true，而不是抛出异常。这让 AI 模型能理解错误原因并告知用户。
+
+---
+
+## **5\. 部署与分发**
+
+## **5.1 Stdio 分发 (npm)**
+
+开发者通过在其 AI 工具的配置文件中添加以下内容来使用：
+
+**Claude Desktop 配置示例：**
+
+JSON  
+{  
+  "mcpServers": {  
+    "alephant": {  
+      "command": "npx",  
+      "args": \["-y", "@alephant/mcp"\],  
+      "env": {  
+        "ALEPHANT\_API\_KEY": "your-api-key"  
+      }  
+    }  
+  }  
+}
+
+## **5.2 远程 HTTP 部署**
+
+将 MCP 服务器托管在生产环境（如 VPS 或 Kubernetes），地址设为 mcp.alephant.ai/mcp。这适合团队共享，无需在本地安装任何内容。
+
+## **5.3 发布到 MCP 目录**
+
+发布后，需在以下目录进行注册以提高曝光率：
+
+* **MCP Server Directory** (modelcontextprotocol.io)  
+* **Smithery** (流行的社区 MCP 目录)  
+* **Glama** / **npm registry**
+
+---
+
+## **6\. 推荐构建时间表**
+
+| 周次 | 交付物 | 细节 |
+| :---- | :---- | :---- |
+| **第 1 周** | 阶段 1 工具 \+ Stdio 传输 | 构建核心用量查询工具，发布 npm 测试版。录制演示视频。 |
+| **第 2 周** | 阶段 2 工具 \+ 正式发布 | 构建密钥管理工具，发布 v1.0.0。编写完整文档。 |
+| **第 3 周** | 远程 HTTP 传输 \+ 部署 | 添加 Express 支持，部署到 mcp.alephant.ai。 |
+| **第 4 周** | 剩余工具 \+ OAuth | 添加路由和告警工具，实现 OAuth 登录。在各大目录注册。 |
+
+## **6.1 营销里程碑**
+
+* **第 1 周**：在 Twitter 发布 30 秒视频：“让 Claude 检查你的 AI 支出”。  
+* **第 2 周**：发布博客文章：“从任何 AI 工具管理你的 AI 成本”。  
+* **第 3 周**：教程视频：“如何在 2 分钟内将 Alephant 接入 Cursor”。
+
+---
+
+**大局观：**
+
+MCP 服务器不仅是一个功能，它是一个**分发渠道**。安装了它的开发者在日常工作流中就能直接体验 Alephant 的价值。无需打开浏览器，无需登录后台，只需提问。这正是将免费用户转化为付费客户的最佳方式。
