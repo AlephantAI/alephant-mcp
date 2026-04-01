@@ -83,7 +83,7 @@ MCP 启动时通过环境变量判断运行模式：
 | `ALEPHANT_VIRTUAL_KEY` | `vk-xxx...` | 成员模式 | `Authorization: Bearer <vk>` + `X-Alephant-Virtual-Key` |
 | `ALEPHANT_PAT` | `pat_xxx...` | 管理者模式 | `Authorization: Bearer <pat>` |
 | 两者都提供 | — | 管理者模式（PAT 优先） | `Authorization: Bearer <pat>` |
-| 都不提供 | — | Mock 模式（本地演示） | 无 |
+| 都不提供 | — | 报错退出（缺少认证凭证） | — |
 
 ### 2.2 三条并行开发线
 
@@ -93,7 +93,7 @@ MCP 启动时通过环境变量判断运行模式：
 | **B: Cockpit API** | backend-saas-service | VK-scoped 只读 API（scope/usage/budget） | 无 |
 | **C: MCP Server** | alephant-mcp | 双模式框架 + 全部工具定义 + API Client | 依赖 A、B 的接口契约（不依赖实现） |
 
-三条线在开工前先敲定 API 契约（本文档 §3 / §4 / §5），然后各自独立开发、Mock 联调，最后集成测试。
+三条线在开工前先敲定 API 契约（本文档 §3 / §4 / §5），然后各自独立开发、契约联调，最后集成测试。**注：不使用 Mock Client**，MCP Server 直接对接真实后端 API。
 
 ---
 
@@ -125,6 +125,7 @@ CREATE INDEX idx_pat_hash_active ON personal_access_tokens (token_hash) WHERE re
 - Token 明文**只在创建时返回一次**，存库的是 SHA-256 哈希
 - `scopes` 控制权限粒度：`read`（只读分析/列表）、`write`（创建/修改密钥等）、`admin`（策略/设置）
 - 一个 PAT 绑定**一个工作区**（用户有多个工作区则需多个 PAT）
+- `expires_at` 为 `NULL` 时表示**永不过期**
 
 ### 3.2 Token 格式
 
@@ -203,9 +204,10 @@ pat_ws<workspace-slug-hash-6chars>_<32-bytes-random-hex>
 核心交互：
 - 列表展示已有 PATs：名称、前缀、Scopes 标签、最后使用时间、过期状态
 - 创建按钮 → 弹窗：填名称、选 Scopes（多选 checkbox）、设过期时间（可选 datepicker）
-- 创建成功 → 一次性展示完整 token，带复制按钮 + 警告文案「此 token 不再显示，请立即复制保存」
+- 创建成功 → 一次性展示完整 token，带复制按钮 + 警告文案「此 token 不再显示，请立即复制保存」+ MCP 配置 JSON 片段
 - 每条 PAT 支持撤销操作（确认弹窗）
 - 显示 MCP 配置代码片段（Claude Desktop / Cursor JSON 格式），方便用户直接复制
+- **多工作区支持**：用户为每个工作区创建独立 PAT，通过 token_prefix 前缀识别
 
 ---
 
@@ -365,7 +367,7 @@ alephant-mcp/
 │   ├── index.ts                 ← 入口：解析模式，启动传输
 │   ├── server.ts                ← McpServer 实例创建 + 工具注册
 │   ├── auth/
-│   │   ├── detector.ts          ← 模式识别（VK / PAT / Mock）
+│   │   ├── detector.ts          ← 模式识别（VK / PAT）
 │   │   └── types.ts             ← AuthMode 类型定义
 │   ├── clients/
 │   │   ├── base-client.ts       ← HTTP 客户端基类（重试、错误处理）
