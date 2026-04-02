@@ -11,7 +11,7 @@ import { registerManagerAgentTools } from "./manager/agents.js";
 import { registerManagerDepartmentTools } from "./manager/departments.js";
 import { registerManagerPolicyTools } from "./manager/policies.js";
 
-/** Registers 7 tools in vk mode, 15 in manager mode (18 unique names total; shared count twice). */
+/** Registers 7 tools in vk mode, 15 in manager mode (18 unique names total; shared tools in both). */
 export function registerTools(server: McpServer, mode: AuthMode, deps: ToolDeps): void {
   registerSharedUsageTools(server, deps);
   registerListAvailableModels(server, deps);

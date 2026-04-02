@@ -5,6 +5,17 @@ import type { SharedPeriod } from "../utils/analytics-period.js";
 import { periodToDateRange } from "../utils/analytics-period.js";
 import type { AgentDeptPeriod } from "../utils/analytics-period.js";
 import { agentPeriodToDays } from "../utils/analytics-period.js";
+import type {
+  WorkspaceOverviewResponse,
+  VirtualKeysListResponse,
+  AgentsListResponse,
+  DepartmentsListResponse,
+  SubscriptionResponse,
+  BudgetControlResponse,
+  BudgetControlConfig,
+  CreateVirtualKeyBody,
+  UpdateKeyBudgetBody,
+} from "./types.js";
 
 /**
  * Manager (PAT) mode: /api/v1/* with Bearer PAT + X-Workspace-Id.
@@ -16,12 +27,12 @@ export class ManagerClient {
   constructor(baseURL: string, pat: string, workspaceId: string) {
     this.workspaceId = workspaceId;
     const auth: ClientAuth = { kind: "pat", token: pat, workspaceId };
-    this.http = createHttpClient(baseURL.replace(/\/$/, ""), auth);
+    this.http = createHttpClient(baseURL, auth);
   }
 
-  async getWorkspaceOverview(): Promise<unknown> {
+  async getWorkspaceOverview(): Promise<WorkspaceOverviewResponse> {
     const { data } = await this.http.get("/api/v1/analytics/overview");
-    return data;
+    return data as WorkspaceOverviewResponse;
   }
 
   async getAnalyticsCosts(period: SharedPeriod): Promise<unknown> {
@@ -42,19 +53,19 @@ export class ManagerClient {
     return data;
   }
 
-  async listVirtualKeys(page = 1, pageSize = 50): Promise<unknown> {
+  async listVirtualKeys(page = 1, pageSize = 50): Promise<VirtualKeysListResponse> {
     const { data } = await this.http.get("/api/v1/virtual-keys", {
       params: { page, pageSize },
     });
-    return data;
+    return data as VirtualKeysListResponse;
   }
 
-  async createVirtualKey(body: Record<string, unknown>): Promise<unknown> {
+  async createVirtualKey(body: CreateVirtualKeyBody): Promise<unknown> {
     const { data } = await this.http.post("/api/v1/virtual-keys", body);
     return data;
   }
 
-  async patchVirtualKey(id: string, body: Record<string, unknown>): Promise<unknown> {
+  async patchVirtualKey(id: string, body: UpdateKeyBudgetBody): Promise<unknown> {
     const { data } = await this.http.patch(`/api/v1/virtual-keys/${id}`, body);
     return data;
   }
@@ -64,11 +75,11 @@ export class ManagerClient {
     return data;
   }
 
-  async listAgents(departmentId?: string, page = 1, pageSize = 50): Promise<unknown> {
+  async listAgents(departmentId?: string, page = 1, pageSize = 50): Promise<AgentsListResponse> {
     const params: Record<string, string | number> = { page, pageSize };
     if (departmentId) params.departmentId = departmentId;
     const { data } = await this.http.get("/api/v1/agents", { params });
-    return data;
+    return data as AgentsListResponse;
   }
 
   async getAgentAnalytics(agentId: string, period: AgentDeptPeriod): Promise<unknown> {
@@ -79,11 +90,11 @@ export class ManagerClient {
     return data;
   }
 
-  async listDepartments(page = 1, pageSize = 100): Promise<unknown> {
+  async listDepartments(page = 1, pageSize = 100): Promise<DepartmentsListResponse> {
     const { data } = await this.http.get("/api/v1/departments", {
       params: { page, pageSize },
     });
-    return data;
+    return data as DepartmentsListResponse;
   }
 
   async getDepartmentAnalytics(departmentId: string, period: AgentDeptPeriod): Promise<unknown> {
@@ -94,23 +105,28 @@ export class ManagerClient {
     return data;
   }
 
-  async getSubscriptionCurrent(): Promise<unknown> {
+  async getSubscriptionCurrent(): Promise<SubscriptionResponse> {
     const { data } = await this.http.get("/api/v1/subscriptions/current");
-    return data;
+    return data as SubscriptionResponse;
   }
 
-  async getBudgetControl(): Promise<unknown> {
+  async getBudgetControl(): Promise<BudgetControlResponse> {
     const { data } = await this.http.get("/api/v1/policies/budget-control");
-    return data;
+    return data as BudgetControlResponse;
   }
 
-  async putBudgetControl(body: Record<string, unknown>): Promise<unknown> {
+  async putBudgetControl(body: { config: Partial<BudgetControlConfig> }): Promise<unknown> {
     const { data } = await this.http.put("/api/v1/policies/budget-control", body);
     return data;
   }
 
   getWorkspaceId(): string {
     return this.workspaceId;
+  }
+
+  async listModels(): Promise<unknown[]> {
+    const { data } = await this.http.get("/api/v1/models");
+    return data as unknown[];
   }
 }
 

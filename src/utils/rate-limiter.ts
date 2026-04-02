@@ -9,7 +9,7 @@ export class RateLimiter {
 
   constructor(private readonly rpm: number) {
     this.lastRefillMs = Date.now();
-    this.tokens = rpm <= 0 ? 1 : rpm;
+    this.tokens = rpm <= 0 ? 0 : rpm;
   }
 
   private refill(): void {
@@ -39,9 +39,23 @@ export class RateLimiter {
 }
 
 let globalLimiter: RateLimiter | undefined;
+let globalLimiterRpm: number | undefined;
 
-/** Lazy init so tests can set ALEPHANT_RATE_LIMIT_RPM before first tool call. */
+/**
+ * Lazy init + recreate on RPM change so env var updates take effect.
+ * Tests should call resetGlobalRateLimiter() between cases.
+ */
 export async function acquireGlobalRateSlot(): Promise<void> {
-  globalLimiter ??= new RateLimiter(getRateLimitRpm());
+  const rpm = getRateLimitRpm();
+  if (!globalLimiter || rpm !== globalLimiterRpm) {
+    globalLimiter = new RateLimiter(rpm);
+    globalLimiterRpm = rpm;
+  }
   return globalLimiter.acquire();
+}
+
+/** Reset the global limiter (for tests). */
+export function resetGlobalRateLimiter(): void {
+  globalLimiter = undefined;
+  globalLimiterRpm = undefined;
 }

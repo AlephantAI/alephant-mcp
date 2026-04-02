@@ -2,14 +2,13 @@
   "name": "@alephantai/mcp",
   "version": "0.0.4",
   "type": "module",
-  "main": "index.js",
+  "main": "dist/index.js",
   "bin": {
     "alephant-mcp": "./bin/alephant-mcp.js"
   },
   "files": [
     "bin",
     "dist",
-    "data",
     "docs",
     "skills"
   ],
