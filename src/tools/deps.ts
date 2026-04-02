@@ -11,3 +11,13 @@ export type ToolDeps = {
   cockpit: CockpitClient | null;
   manager: ManagerClient | null;
 };
+
+export function requireCockpit(deps: ToolDeps): CockpitClient {
+  if (!deps.cockpit) throw new Error("Cockpit client not configured");
+  return deps.cockpit;
+}
+
+export function requireManager(deps: ToolDeps): ManagerClient {
+  if (!deps.manager) throw new Error("Manager client not configured");
+  return deps.manager;
+}

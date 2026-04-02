@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolDeps } from "../deps.js";
+import { requireCockpit, requireManager } from "../deps.js";
 import { safeCall } from "../../utils/safe-call.js";
 import type { SharedPeriod } from "../../utils/analytics-period.js";
 
@@ -16,11 +17,11 @@ export function registerSharedUsageTools(server: McpServer, deps: ToolDeps): voi
     async ({ period }) => {
       const p = period as SharedPeriod;
       if (deps.mode === "vk") {
-        if (!deps.cockpit) throw new Error("Cockpit client not configured");
-        return safeCall(() => deps.cockpit!.usageSummary(p), "vk");
+        const cockpit = requireCockpit(deps);
+        return safeCall(() => cockpit.usageSummary(p), "vk");
       }
-      if (!deps.manager) throw new Error("Manager client not configured");
-      return safeCall(() => deps.manager!.getAnalyticsCosts(p), "manager");
+      const manager = requireManager(deps);
+      return safeCall(() => manager.getAnalyticsCosts(p), "manager");
     },
   );
 
@@ -30,11 +31,11 @@ export function registerSharedUsageTools(server: McpServer, deps: ToolDeps): voi
     async ({ period }) => {
       const p = period as SharedPeriod;
       if (deps.mode === "vk") {
-        if (!deps.cockpit) throw new Error("Cockpit client not configured");
-        return safeCall(() => deps.cockpit!.dailyCosts(p), "vk");
+        const cockpit = requireCockpit(deps);
+        return safeCall(() => cockpit.dailyCosts(p), "vk");
       }
-      if (!deps.manager) throw new Error("Manager client not configured");
-      return safeCall(() => deps.manager!.getAnalyticsUsage(p), "manager");
+      const manager = requireManager(deps);
+      return safeCall(() => manager.getAnalyticsUsage(p), "manager");
     },
   );
 
@@ -44,11 +45,11 @@ export function registerSharedUsageTools(server: McpServer, deps: ToolDeps): voi
     async ({ period }) => {
       const p = period as SharedPeriod;
       if (deps.mode === "vk") {
-        if (!deps.cockpit) throw new Error("Cockpit client not configured");
-        return safeCall(() => deps.cockpit!.costByModel(p), "vk");
+        const cockpit = requireCockpit(deps);
+        return safeCall(() => cockpit.costByModel(p), "vk");
       }
-      if (!deps.manager) throw new Error("Manager client not configured");
-      return safeCall(() => deps.manager!.getAnalyticsModels(p), "manager");
+      const manager = requireManager(deps);
+      return safeCall(() => manager.getAnalyticsModels(p), "manager");
     },
   );
 }

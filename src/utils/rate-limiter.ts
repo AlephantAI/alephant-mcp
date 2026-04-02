@@ -15,8 +15,9 @@ export class RateLimiter {
   private refill(): void {
     if (this.rpm <= 0) return;
     const now = Date.now();
-    const elapsedMin = (now - this.lastRefillMs) / 60_000;
-    if (elapsedMin <= 0) return;
+    const elapsedMs = now - this.lastRefillMs;
+    if (elapsedMs < 1_000) return;
+    const elapsedMin = elapsedMs / 60_000;
     const added = elapsedMin * this.rpm;
     this.tokens = Math.min(this.rpm, this.tokens + added);
     this.lastRefillMs = now;
