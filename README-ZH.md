@@ -26,33 +26,37 @@ npm install -g @alephantai/mcp
 1. 打开 **Cursor 设置** → **功能 (Features)** → **MCP**
 2. 点击 **+ Add New MCP Server**
 3. 填写以下信息：
-   - **名称 (Name)**: Alephant
-   - **类型 (Type)**: command
-   - **命令 (Command)**: `npx -y @alephantai/mcp`
+  - **名称 (Name)**: Alephant
+  - **类型 (Type)**: command
+  - **命令 (Command)**: `npx -y @alephantai/mcp`
 4. 配置环境变量以对接真实后端：
-   - **ALEPHANT_API_BASE_URL**：后端地址，如 `https://api.alephant.ai`
-   - **ALEPHANT_VIRTUAL_KEY**：您的虚拟 Key（VK 模式，只读）
-   - 或 **ALEPHANT_PAT** + **ALEPHANT_WORKSPACE_ID**（Manager 模式，完整管理权限）
+  - **ALEPHANT_API_BASE_URL**：后端地址，如 `https://api.alephant.io`
+  - **ALEPHANT_VIRTUAL_KEY**：您的虚拟 Key（VK 模式，只读）
+  - 或 **ALEPHANT_PAT** + **ALEPHANT_WORKSPACE_ID**（Manager 模式，完整管理权限）
 5. 确认状态指示灯变为 **绿色**
 
 ### 3. 两种运行模式
 
-| 模式 | 环境变量 | 权限 | 工具数量 |
-|------|----------|------|----------|
-| **VK** | `ALEPHANT_VIRTUAL_KEY` | 只读，单个 cockpit 范围 | 7 个 |
-| **Manager** | `ALEPHANT_PAT` + `ALEPHANT_WORKSPACE_ID` | 工作区完整管理 | 15 个 |
+
+| 模式          | 环境变量                                     | 权限               | 工具数量 |
+| ----------- | ---------------------------------------- | ---------------- | ---- |
+| **VK**      | `ALEPHANT_VIRTUAL_KEY`                   | 只读，单个 cockpit 范围 | 7 个  |
+| **Manager** | `ALEPHANT_PAT` + `ALEPHANT_WORKSPACE_ID` | 工作区完整管理          | 15 个 |
+
 
 PAT 优先。如果两者都未设置，进程将退出（不使用 Mock 数据）。
 
 ## 使用场景
 
-| 用户意图 | 建议指令 |
-| :---- | :---- |
-| **检查健康度** | "查一下当前预算状态。" |
-| **查看归因** | "列出当前 scope 的消耗归因。" |
-| **生成报告** | "生成一份每周成本审计报告。" |
-| **管理密钥** | "列出所有虚拟密钥。" / "创建一个新的虚拟密钥。" |
-| **查看分析** | "列出所有 Agent。" / "查看部门分析。" |
+
+| 用户意图      | 建议指令                        |
+| --------- | --------------------------- |
+| **检查健康度** | "查一下当前预算状态。"                |
+| **查看归因**  | "列出当前 scope 的消耗归因。"         |
+| **生成报告**  | "生成一份每周成本审计报告。"             |
+| **管理密钥**  | "列出所有虚拟密钥。" / "创建一个新的虚拟密钥。" |
+| **查看分析**  | "列出所有 Agent。" / "查看部门分析。"   |
+
 
 ## 定时任务与主动汇报
 
