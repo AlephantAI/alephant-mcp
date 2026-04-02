@@ -1,4 +1,4 @@
-import axios, { type AxiosInstance } from "axios";
+import { type AxiosInstance } from "axios";
 import { createHttpClient, type ClientAuth } from "./base-client.js";
 import { requireBaseUrl } from "../config/env.js";
 
@@ -17,9 +17,7 @@ export class CockpitClient {
 
   /** No Authorization header (public health). */
   async health(): Promise<unknown> {
-    const { data } = await axios.get(`${this.root}/api/v1/cockpit/health`, {
-      timeout: 15_000,
-    });
+    const { data } = await this.http.get("/api/v1/cockpit/health");
     return data;
   }
 

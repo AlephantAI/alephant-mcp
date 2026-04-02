@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolDeps } from "../deps.js";
+import { requireCockpit } from "../deps.js";
 import { safeCall } from "../../utils/safe-call.js";
 
 export function registerVkBudgetTools(server: McpServer, deps: ToolDeps): void {
@@ -13,8 +14,8 @@ export function registerVkBudgetTools(server: McpServer, deps: ToolDeps): void {
         .describe("Budget window for cockpit/budget-status query param"),
     },
     async ({ period }) => {
-      if (!deps.cockpit) throw new Error("Cockpit client not configured");
-      return safeCall(() => deps.cockpit!.budgetStatus(period), "vk");
+      const cockpit = requireCockpit(deps);
+      return safeCall(() => cockpit.budgetStatus(period), "vk");
     },
   );
 
@@ -25,8 +26,8 @@ export function registerVkBudgetTools(server: McpServer, deps: ToolDeps): void {
       offset: z.coerce.number().int().min(0).default(0),
     },
     async ({ limit, offset }) => {
-      if (!deps.cockpit) throw new Error("Cockpit client not configured");
-      return safeCall(() => deps.cockpit!.recentRequests(limit, offset), "vk");
+      const cockpit = requireCockpit(deps);
+      return safeCall(() => cockpit.recentRequests(limit, offset), "vk");
     },
   );
 }

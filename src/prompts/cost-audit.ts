@@ -9,8 +9,7 @@ export function registerCostAuditPrompt(server: McpServer, mode: AuthMode): void
       period: z.enum(["weekly", "monthly", "quarterly"]).default("weekly").describe("Audit period label"),
     },
     ({ period }) => {
-      const periodLabel =
-        period === "weekly" ? "weekly" : period === "monthly" ? "monthly" : "quarterly";
+      const periodLabel = period;
       const vkSteps =
         "1. Call get_usage_summary with an appropriate period.\n" +
         "2. Call get_daily_costs and get_cost_by_model for the same window.\n" +

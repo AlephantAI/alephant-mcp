@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolDeps } from "../deps.js";
+import { requireManager } from "../deps.js";
 import { safeCall } from "../../utils/safe-call.js";
 import type { AgentDeptPeriod } from "../../utils/analytics-period.js";
 
@@ -13,8 +14,8 @@ export function registerManagerAgentTools(server: McpServer, deps: ToolDeps): vo
       department_id: z.string().uuid().optional().describe("Filter by department UUID"),
     },
     async ({ department_id }) => {
-      if (!deps.manager) throw new Error("Manager client not configured");
-      return safeCall(() => deps.manager!.listAgents(department_id), "manager");
+      const manager = requireManager(deps);
+      return safeCall(() => manager.listAgents(department_id), "manager");
     },
   );
 
@@ -25,9 +26,9 @@ export function registerManagerAgentTools(server: McpServer, deps: ToolDeps): vo
       period: agentPeriodSchema,
     },
     async ({ agent_id, period }) => {
-      if (!deps.manager) throw new Error("Manager client not configured");
+      const manager = requireManager(deps);
       return safeCall(
-        () => deps.manager!.getAgentAnalytics(agent_id, period as AgentDeptPeriod),
+        () => manager.getAgentAnalytics(agent_id, period as AgentDeptPeriod),
         "manager",
       );
     },

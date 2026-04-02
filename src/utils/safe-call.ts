@@ -28,14 +28,19 @@ export function toHttpLike(err: unknown): HttpLikeError {
       message: err.message,
     };
   }
-  if (err && typeof err === "object" && "message" in err) {
+  if (err && typeof err === "object") {
     const o = err as Record<string, unknown>;
-    return {
-      status: typeof o.status === "number" ? o.status : undefined,
-      headers: typeof o.headers === "object" && o.headers !== null ? headerMap(o.headers) : undefined,
-      code: typeof o.code === "string" ? o.code : undefined,
-      message: String(o.message),
-    };
+    if ("status" in o && typeof o.status === "number") {
+      return {
+        status: o.status,
+        headers: typeof o.headers === "object" && o.headers !== null ? headerMap(o.headers) : undefined,
+        code: typeof o.code === "string" ? o.code : typeof o.code === "number" ? String(o.code) : undefined,
+        message: "message" in o ? String(o.message) : "Unknown error",
+      };
+    }
+    if ("message" in o) {
+      return { message: String(o.message) };
+    }
   }
   return { message: err instanceof Error ? err.message : String(err) };
 }
@@ -47,8 +52,18 @@ export async function safeCall<T>(
   await acquireGlobalRateSlot();
   try {
     const data = await fn();
+    let text: string;
+    try {
+      text = JSON.stringify(data, null, 2);
+    } catch {
+      if (data && typeof data === "object") {
+        text = JSON.stringify(data) || String(data);
+      } else {
+        text = String(data);
+      }
+    }
     return {
-      content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+      content: [{ type: "text", text }],
     };
   } catch (err) {
     const e = toHttpLike(err);
@@ -79,6 +94,24 @@ export async function safeCall<T>(
         content: [
           { type: "text", text: `Rate limit exceeded. Retry after ${retryAfter} seconds.` },
         ],
+        isError: true,
+      };
+    }
+    if (e.status === 400) {
+      return {
+        content: [{ type: "text", text: `Bad request: ${e.message}` }],
+        isError: true,
+      };
+    }
+    if (e.status === 404) {
+      return {
+        content: [{ type: "text", text: `Not found: ${e.message}` }],
+        isError: true,
+      };
+    }
+    if (e.status === 502) {
+      return {
+        content: [{ type: "text", text: "Bad gateway. The backend service is unavailable." }],
         isError: true,
       };
     }
