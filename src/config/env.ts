@@ -25,7 +25,10 @@ export function getRateLimitRpm(): number {
   const raw = process.env.ALEPHANT_RATE_LIMIT_RPM;
   if (raw === undefined || raw === "") return 60;
   const n = Number.parseInt(raw, 10);
-  if (Number.isNaN(n) || n < 0) return 60;
+  if (Number.isNaN(n) || n < 0) {
+    console.error(`[env] Invalid ALEPHANT_RATE_LIMIT_RPM "${raw}", falling back to 60`);
+    return 60;
+  }
   return n;
 }
 

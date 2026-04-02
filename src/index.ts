@@ -7,7 +7,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { detectAuthMode } from "./auth/detector.js";
 import {
-  getApiBaseUrl,
   getPat,
   getVirtualKey,
   getWorkspaceId,
@@ -18,7 +17,6 @@ import { createManagerClientFromEnv } from "./clients/manager-client.js";
 import { registerTools } from "./tools/registry.js";
 import type { ToolDeps } from "./tools/deps.js";
 import { registerPrompts } from "./prompts/register.js";
-import { registerResources } from "./resources/register.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -35,46 +33,32 @@ function readPackageVersion(): string {
 async function runAudit(mode: ReturnType<typeof detectAuthMode>): Promise<void> {
   if (mode === "vk") {
     const vk = getVirtualKey();
-    if (!vk) {
-      console.error("ALEPHANT_VIRTUAL_KEY missing");
-      process.exit(1);
-    }
+    if (!vk) throw new Error("ALEPHANT_VIRTUAL_KEY missing");
     const cockpit = createCockpitClientFromEnv(vk);
-    try {
-      const scope = await cockpit.scope();
-      const usage = await cockpit.usageSummary("billing_cycle");
-      console.log("[Alephant audit — VK]", JSON.stringify({ scope, usage }));
-    } catch (e) {
-      console.error("[Alephant audit — VK] failed:", e instanceof Error ? e.message : e);
-      process.exit(1);
-    }
+    const scope = await cockpit.scope();
+    const usage = await cockpit.usageSummary("billing_cycle");
+    console.log("[Alephant audit — VK]", JSON.stringify({ scope, usage }));
     return;
   }
 
   const pat = getPat();
   const ws = getWorkspaceId();
   if (!pat || !ws) {
-    console.error("ALEPHANT_PAT and ALEPHANT_WORKSPACE_ID required for manager audit");
-    process.exit(1);
+    throw new Error("ALEPHANT_PAT and ALEPHANT_WORKSPACE_ID required for manager audit");
   }
   const manager = createManagerClientFromEnv(pat, ws);
-  try {
-    const overview = await manager.getWorkspaceOverview();
-    console.log("[Alephant audit — manager] workspace:", ws, JSON.stringify(overview));
-  } catch (e) {
-    console.error("[Alephant audit — manager] failed:", e instanceof Error ? e.message : e);
-    process.exit(1);
-  }
+  const overview = await manager.getWorkspaceOverview();
+  console.log("[Alephant audit — manager] workspace:", ws, JSON.stringify(overview));
 }
 
 async function main(): Promise<void> {
   const mode = detectAuthMode(process.env);
-  const baseUrl = requireBaseUrl();
+  requireBaseUrl();
   const version = readPackageVersion();
 
   if (process.argv.includes("--audit")) {
     await runAudit(mode);
-    process.exit(0);
+    return;
   }
 
   const server = new McpServer({
@@ -91,8 +75,6 @@ async function main(): Promise<void> {
     const cockpit = createCockpitClientFromEnv(vk);
     deps = {
       mode,
-      baseUrl,
-      vk,
       cockpit,
       manager: null,
     };
@@ -105,9 +87,6 @@ async function main(): Promise<void> {
     const manager = createManagerClientFromEnv(pat, workspaceId);
     deps = {
       mode,
-      baseUrl,
-      pat,
-      workspaceId,
       cockpit: null,
       manager,
     };
@@ -115,15 +94,21 @@ async function main(): Promise<void> {
 
   registerTools(server, mode, deps);
   registerPrompts(server, mode);
-  registerResources(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
   const cred =
     mode === "vk"
       ? "VK mode (ALEPHANT_VIRTUAL_KEY)"
-      : `manager/PAT mode (workspace ${deps.workspaceId ?? ""})`;
-  console.error(`Alephant MCP v${version} — ${cred}; base URL ${getApiBaseUrl() ?? baseUrl}`);
+      : `manager/PAT mode (workspace ${getWorkspaceId()})`;
+  console.error(`Alephant MCP v${version} — ${cred}; base URL ${requireBaseUrl()}`);
+
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.on(signal, () => {
+      console.error(`Alephant MCP received ${signal}, shutting down`);
+      process.exit(0);
+    });
+  }
 }
 
 try {

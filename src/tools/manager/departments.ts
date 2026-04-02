@@ -16,7 +16,7 @@ export function registerManagerDepartmentTools(server: McpServer, deps: ToolDeps
       period: z
         .enum(["24h", "7d", "30d"])
         .default("30d")
-        .describe("Requested window (backend may return fixed billing window until extended)"),
+        .describe("Backend returns fixed billing window; period is informational only"),
     },
     async ({ department_id }) => {
       if (!deps.manager) throw new Error("Manager client not configured");

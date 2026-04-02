@@ -106,8 +106,7 @@ Manager only: `get_workspace_overview`, `list_virtual_keys`, `create_virtual_key
 ## Prompts & resources
 
 - **cost_audit_report** — both modes  
-- **cost_optimization** — manager only  
-- **model-catalog** — static JSON resource (`data/model-catalog.json`)
+- **cost_optimization** — manager only
 
 ## Documentation
 

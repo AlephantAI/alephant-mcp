@@ -4,11 +4,11 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "resolveJsonModule": true,
-    "outDir": "./dist",        // <--- 关键：所有生成的 JS 放到 dist 目录
-    "rootDir": "./src",       // 建议把 index.ts 移入 src 文件夹
-    "declaration": true,      // 生成 .d.ts
-    "sourceMap": false,       // 发布时可以关闭 map 减小体积
-    "removeComments": true,   // 移除注释减小体积
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true,
+    "sourceMap": false,
+    "removeComments": true,
     "verbatimModuleSyntax": true,
     "types": ["node"]
   },

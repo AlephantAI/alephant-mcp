@@ -15,6 +15,8 @@ function headerMap(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== "object") return out;
   for (const [k, v] of Object.entries(raw)) {
     if (typeof v === "string") out[k.toLowerCase()] = v;
+    else if (typeof v === "number") out[k.toLowerCase()] = String(v);
+    else if (Array.isArray(v)) out[k.toLowerCase()] = v.join(", ");
   }
   return out;
 }
@@ -52,6 +54,8 @@ export async function safeCall<T>(
     };
   } catch (err) {
     const e = toHttpLike(err);
+    const statusLabel = e.status ? `HTTP ${e.status}` : e.code ?? "unknown";
+    console.error(`[safeCall] ${statusLabel}: ${e.message}`);
     if (e.status === 401) {
       const hint =
         mode === "vk"
@@ -111,7 +115,7 @@ export async function safeCall<T>(
       };
     }
     return {
-      content: [{ type: "text", text: `Unexpected error: ${e.message || "Unknown error"}` }],
+      content: [{ type: "text", text: `Unexpected error: ${e.message}` }],
       isError: true,
     };
   }

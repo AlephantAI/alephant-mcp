@@ -2,7 +2,6 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolDeps } from "../deps.js";
 import { safeCall } from "../../utils/safe-call.js";
-import type { SharedPeriod } from "../../utils/analytics-period.js";
 
 const periodSchema = z
   .enum(["24h", "7d", "30d", "billing_cycle"])
@@ -14,13 +13,12 @@ export function registerSharedUsageTools(server: McpServer, deps: ToolDeps): voi
     "get_usage_summary",
     { period: periodSchema },
     async ({ period }) => {
-      const p = period as SharedPeriod;
       if (deps.mode === "vk") {
         if (!deps.cockpit) throw new Error("Cockpit client not configured");
-        return safeCall(() => deps.cockpit!.usageSummary(p), "vk");
+        return safeCall(() => deps.cockpit!.usageSummary(period), "vk");
       }
       if (!deps.manager) throw new Error("Manager client not configured");
-      return safeCall(() => deps.manager!.getAnalyticsCosts(p), "manager");
+      return safeCall(() => deps.manager!.getAnalyticsCosts(period), "manager");
     },
   );
 
@@ -28,13 +26,13 @@ export function registerSharedUsageTools(server: McpServer, deps: ToolDeps): voi
     "get_daily_costs",
     { period: periodSchema },
     async ({ period }) => {
-      const p = period as SharedPeriod;
       if (deps.mode === "vk") {
         if (!deps.cockpit) throw new Error("Cockpit client not configured");
-        return safeCall(() => deps.cockpit!.dailyCosts(p), "vk");
+        return safeCall(() => deps.cockpit!.dailyCosts(period), "vk");
       }
       if (!deps.manager) throw new Error("Manager client not configured");
-      return safeCall(() => deps.manager!.getAnalyticsUsage(p), "manager");
+      // Manager mode: /api/v1/analytics/usage returns daily cost entries (not /api/v1/analytics/costs)
+      return safeCall(() => deps.manager!.getAnalyticsUsage(period), "manager");
     },
   );
 
@@ -42,13 +40,12 @@ export function registerSharedUsageTools(server: McpServer, deps: ToolDeps): voi
     "get_cost_by_model",
     { period: periodSchema },
     async ({ period }) => {
-      const p = period as SharedPeriod;
       if (deps.mode === "vk") {
         if (!deps.cockpit) throw new Error("Cockpit client not configured");
-        return safeCall(() => deps.cockpit!.costByModel(p), "vk");
+        return safeCall(() => deps.cockpit!.costByModel(period), "vk");
       }
       if (!deps.manager) throw new Error("Manager client not configured");
-      return safeCall(() => deps.manager!.getAnalyticsModels(p), "manager");
+      return safeCall(() => deps.manager!.getAnalyticsModels(period), "manager");
     },
   );
 }
