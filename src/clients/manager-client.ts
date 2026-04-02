@@ -97,8 +97,11 @@ export class ManagerClient {
     return data as DepartmentsListResponse;
   }
 
-  async getDepartmentAnalytics(departmentId: string): Promise<unknown> {
-    const { data } = await this.http.get(`/api/v1/departments/${departmentId}/analytics`);
+  async getDepartmentAnalytics(departmentId: string, period: AgentDeptPeriod): Promise<unknown> {
+    const days = agentPeriodToDays(period);
+    const { data } = await this.http.get(`/api/v1/departments/${departmentId}/analytics`, {
+      params: { days },
+    });
     return data;
   }
 

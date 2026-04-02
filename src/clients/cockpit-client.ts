@@ -1,4 +1,5 @@
-import axios, { type AxiosInstance } from "axios";
+import { type AxiosInstance } from "axios";
+import axios from "axios";
 import { createHttpClient, type ClientAuth } from "./base-client.js";
 import { requireBaseUrl } from "../config/env.js";
 import type {
