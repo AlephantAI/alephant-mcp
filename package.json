@@ -9,7 +9,9 @@
   "files": [
     "bin",
     "dist",
-    "data"
+    "data",
+    "docs",
+    "skills"
   ],
   "scripts": {
     "build": "tsc",

@@ -109,6 +109,11 @@ Manager only: `get_workspace_overview`, `list_virtual_keys`, `create_virtual_key
 - **cost_optimization** — manager only  
 - **model-catalog** — static JSON resource (`data/model-catalog.json`)
 
+## Documentation
+
+- **[中文：在 AI Agent 中如何使用 MCP](docs/zh-CN/agent-mcp-usage.md)** — 自然语言提问示例、`/alephant-…` 快捷模板、工具对照表  
+- **Cursor Skill（可选）**：将 [`skills/alephant-mcp-usage/`](skills/alephant-mcp-usage/) 复制到项目的 `.cursor/skills/alephant-mcp-usage/`，便于 Agent 稳定优先调用本 MCP
+
 ## Development
 
 ```bash
