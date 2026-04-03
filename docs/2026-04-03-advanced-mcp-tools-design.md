@@ -1,63 +1,53 @@
-# Alephant MCP — Advanced Tools Design
+# Alephant MCP — 高级工具设计
 
-> Date: 2026-04-03  
-> Status: Draft  
-> Scope: alephant-mcp (Manager/PAT mode only)
+> 日期: 2026-04-03
+> 状态: 草案
+> 范围: alephant-mcp（仅 Manager/PAT 模式）
 
-## 1. Background & Motivation
+## 1. 背景与动机
 
-The existing alephant-mcp exposes 18 tools (7 VK, 15 Manager) covering basic usage
-summaries, key management, agent/department analytics, and policy operations. These
-tools map roughly 1:1 to backend API endpoints.
+现有 alephant-mcp 暴露 18 个工具（VK 7 个，Manager 15 个），覆盖基础用量汇总、
+密钥管理、智能体/部门分析和策略操作。这些工具大致与后端 API 端点 1:1 映射。
 
-Analysis of the `logs-collector` OpenAPI spec (`openapi-zh.yml`, 31 endpoints) reveals
-significant untapped analytical capabilities — real-time dashboards, time-series
-metrics, period-over-period comparisons, member-dimension analytics, and sparkline
-trends — none of which are accessible through the current MCP toolset.
+对 `logs-collector` OpenAPI 规范（`openapi-zh.yml`，31 个端点）的分析表明，大量
+分析能力尚未通过 MCP 工具暴露——包括实时仪表盘、时间序列指标、环比对比、成员维度
+分析和迷你图趋势。
 
-### Problem
+### 问题
 
-1. **No real-time visibility** — all existing tools use calendar-day aggregations;
-   impossible to answer "what is happening right now?"
-2. **No trend analysis** — no time-series data for any metric; can't plot or detect
-   trajectory changes
-3. **Missing member dimension** — department and agent analytics exist, but per-user
-   spend tracking is absent
-4. **No anomaly detection** — users must manually compare numbers across multiple
-   tool calls to spot issues
-5. **No resource hygiene** — no way to identify idle virtual keys or underutilized agents
+1. **无实时可见性** — 所有现有工具使用日历日聚合；无法回答「此刻发生了什么？」
+2. **无趋势分析** — 无任何指标的时间序列数据；无法绘图或检测趋势变化
+3. **缺失成员维度** — 部门和智能体分析已有，但按用户追踪消费完全缺失
+4. **无异常检测** — 用户必须在多个工具调用间手动对比数据才能发现问题
+5. **无资源卫生** — 无法识别闲置虚拟密钥或低用量智能体
 
-### Design Decision
+### 设计决策
 
-Rather than mapping every remaining API endpoint to a new tool (which would inflate
-the tool count to 35+ and degrade AI model selection accuracy), we adopt a **layered
-hybrid approach**:
+与其将每个剩余 API 端点都映射为新工具（会将工具数膨胀到 35+ 并降低 AI 模型选择
+准确率），我们采用**分层混合方案**：
 
-- **Atomic layer**: 4 new tools for data dimensions that existing tools cannot cover
-- **Composite layer**: 5 new tools that orchestrate multiple API calls internally
-  and return structured insights
-- **Prompt layer**: 2 new prompts that guide AI models through multi-step analytical
-  workflows
+- **原子层**：4 个新工具，覆盖现有工具无法替代的数据维度
+- **组合层**：5 个新工具，内部编排多个 API 调用并返回结构化洞察
+- **Prompt 层**：2 个新提示词，引导 AI 模型完成多步分析工作流
 
-Request logs are **out of scope** — the backend log endpoints require JWT auth which
-PAT cannot satisfy.
+请求日志**不在范围内** — 后端日志端点要求 JWT 鉴权，PAT 无法访问。
 
-## 2. Architecture
+## 2. 架构
 
-### Design Principles
+### 设计原则
 
-1. Follow existing patterns: `ManagerClient` method → `safeCall()` → `server.tool()`
-2. All new tools are Manager-mode only (PAT + X-Workspace-Id)
-3. Composite tools use `Promise.allSettled()` for concurrent sub-calls; partial
-   failures degrade gracefully with `_meta.partial` flag
-4. No new dependencies; reuse axios, zod, existing utilities
-5. Every `server.tool()` call includes a human-readable `description` string to
-   improve AI model tool-selection accuracy
+1. 遵循现有模式：`ManagerClient` 方法 → `safeCall()` → `server.tool()`
+2. 所有新工具仅限 Manager 模式（PAT + X-Workspace-Id）
+3. 组合工具使用 `Promise.allSettled()` 并发子调用；部分失败时通过 `_meta.partial`
+   标志优雅降级
+4. 不引入新依赖；复用 axios、zod 和现有工具函数
+5. 每个 `server.tool()` 调用需包含人类可读的 `description` 字符串以提高 AI 模型
+   的工具选择准确率
 
-### API Path Mapping
+### API 路径映射
 
-ManagerClient talks to **backend-saas-service**, not directly to the logs-collector.
-The backend proxies analytics requests, so paths differ from the OpenAPI spec:
+ManagerClient 与 **backend-saas-service** 通信，而非直接访问 logs-collector。
+后端代理分析请求，因此路径与 OpenAPI 规范不同：
 
 - OpenAPI `GET /v1/analytics/saas/live-24h` → ManagerClient `GET /api/v1/analytics/live-24h`
 - OpenAPI `GET /v1/analytics/saas/sparklines` → ManagerClient `GET /api/v1/analytics/sparklines`
@@ -68,53 +58,52 @@ The backend proxies analytics requests, so paths differ from the OpenAPI spec:
 - OpenAPI `GET /v1/analytics/saas/overview` → ManagerClient `GET /api/v1/analytics/overview`
 - OpenAPI `GET /v1/analytics/saas/models` → ManagerClient `GET /api/v1/analytics/models`
 
-All paths must be verified against backend-saas-service route definitions before
-implementation.
+实现前须对照 backend-saas-service 路由定义验证所有路径。
 
-### File Structure (additions)
+### 文件结构（新增部分）
 
 ```
 src/
 ├── clients/
-│   └── manager-client.ts              # +6 new methods (4 atomic + 2 composite helpers)
+│   └── manager-client.ts              # +6 个新方法（4 原子 + 2 组合辅助）
 ├── tools/
 │   ├── manager/
-│   │   ├── analytics-atomic.ts        # NEW: 4 atomic tools
-│   │   └── analytics-composite.ts     # NEW: 5 composite tools
-│   └── registry.ts                    # +2 register calls
+│   │   ├── analytics-atomic.ts        # 新增：4 个原子工具
+│   │   └── analytics-composite.ts     # 新增：5 个组合工具
+│   └── registry.ts                    # +2 行注册调用
 ├── prompts/
-│   ├── health-check.ts                # NEW: workspace_health_check
-│   ├── cost-deep-dive.ts              # NEW: cost_deep_dive
-│   └── register.ts                    # +2 register calls
+│   ├── health-check.ts                # 新增：workspace_health_check
+│   ├── cost-deep-dive.ts              # 新增：cost_deep_dive
+│   └── register.ts                    # +2 行注册
 └── utils/
-    └── analytics-period.ts            # unchanged
+    └── analytics-period.ts            # 不变
 ```
 
-### Tool Count
+### 工具数量
 
-| Mode    | Before | +Atomic | +Composite | Total   |
-|---------|--------|---------|------------|---------|
-| VK      | 7      | 0       | 0          | **7**   |
-| Manager | 15     | +4      | +5         | **24**  |
+| 模式    | 变更前 | +原子 | +组合 | 合计    |
+|---------|--------|-------|-------|---------|
+| VK      | 7      | 0     | 0     | **7**   |
+| Manager | 15     | +4    | +5    | **24**  |
 
-Prompt count: 2 existing + 2 new = **4 total** (Manager), 1 (VK, unchanged).
+Prompt 数量：现有 2 + 新增 2 = Manager **4 个**，VK 不变（1 个）。
 
-## 3. Atomic Tools (4)
+## 3. 原子工具（4 个）
 
 ### 3.1 `get_live_24h`
 
-**Endpoint**: `GET /v1/analytics/saas/live-24h`
+**端点**：`GET /v1/analytics/saas/live-24h`
 
-**Why it's needed**: Only source of rolling 24-hour real-time data (top models,
-top keys, summary KPIs). No existing tool provides sub-day visibility.
+**必要性**：唯一的滚动 24 小时实时数据来源（Top 模型、Top 密钥、汇总 KPI）。
+现有工具无法提供日以下粒度的可见性。
 
-**Parameters**:
+**参数**：
 
-| Name    | Type | Required | Default | Description                         |
-|---------|------|----------|---------|-------------------------------------|
-| `limit` | int  | No       | 5       | Top-N rows per panel (min 1, max 10)|
+| 名称    | 类型 | 必填 | 默认值 | 说明                              |
+|---------|------|------|--------|-----------------------------------|
+| `limit` | int  | 否   | 5      | 每个面板区域的 Top-N 行数（1-10） |
 
-**ManagerClient method**:
+**ManagerClient 方法**：
 
 ```typescript
 async getLive24h(limit = 5): Promise<unknown> {
@@ -127,21 +116,22 @@ async getLive24h(limit = 5): Promise<unknown> {
 
 ### 3.2 `get_usage_timeseries`
 
-**Endpoint**: `GET /v1/analytics/usage/timeseries`
+**端点**：`GET /v1/analytics/usage/timeseries`
 
-**Why it's needed**: The only way to get metric-specific time-series data with
-configurable granularity. Supports 6 metrics × 2 granularities. Essential for
-trend analysis and anomaly visualization.
+**必要性**：获取指定指标时间序列数据的唯一方式，支持 6 种指标 × 2 种粒度。
+对趋势分析和异常可视化至关重要。
 
-**Parameters**:
+**参数**：
 
-| Name          | Type   | Required | Default | Description                              |
-|---------------|--------|----------|---------|------------------------------------------|
-| `metric`      | enum   | Yes      | —       | `cost` \| `requests` \| `tokens` \| `avg_cost_per_req` \| `success_rate` \| `latency` |
-| `granularity` | enum   | No       | `day`   | `day` \| `hour` (hour not supported for success_rate/latency) |
-| `period`      | enum   | No       | `30d`   | `7d` \| `30d` \| `3m` \| `6m` \| `12m`  |
+| 名称          | 类型   | 必填 | 默认值 | 说明                                     |
+|---------------|--------|------|--------|------------------------------------------|
+| `metric`      | enum   | 是   | —      | `cost` \| `requests` \| `tokens` \| `avg_cost_per_req` \| `success_rate` \| `latency` |
+| `granularity` | enum   | 否   | `day`  | `day` \| `hour`（`hour` 不支持 success_rate/latency） |
+| `period`      | enum   | 否   | `30d`  | `7d` \| `30d` \| `3m` \| `6m` \| `12m`  |
 
-**ManagerClient method**:
+**注意**：MCP 参数名为 `period`，但 API 查询参数名为 `preset`，实现时需做映射。
+
+**ManagerClient 方法**：
 
 ```typescript
 async getUsageTimeseries(
@@ -156,24 +146,24 @@ async getUsageTimeseries(
 }
 ```
 
-**Constraint**: Server returns HTTP 400 (`40010`) when `granularity=hour` is used
-with `success_rate` or `latency`. The tool description should note this.
+**约束**：当 `granularity=hour` 与 `success_rate` 或 `latency` 组合使用时，
+服务端返回 HTTP 400（`40010`）。工具描述中应注明此限制。
 
 ### 3.3 `get_member_analytics`
 
-**Endpoint**: `GET /v1/analytics/saas/members/{id}/analytics`
+**端点**：`GET /v1/analytics/saas/members/{id}/analytics`
 
-**Why it's needed**: Completes the entity-dimension trifecta (department, agent,
-**member**). Required for per-user FinOps tracking.
+**必要性**：补齐实体维度三剑客（部门、智能体、**成员**）。
+按用户的 FinOps 追踪必不可少。
 
-**Parameters**:
+**参数**：
 
-| Name        | Type   | Required | Default | Description      |
-|-------------|--------|----------|---------|------------------|
-| `member_id` | uuid   | Yes      | —       | Member/user UUID |
-| `period`    | enum   | No       | `30d`   | `24h` \| `7d` \| `30d` |
+| 名称        | 类型   | 必填 | 默认值 | 说明           |
+|-------------|--------|------|--------|----------------|
+| `member_id` | uuid   | 是   | —      | 成员/用户 UUID |
+| `period`    | enum   | 否   | `30d`  | `24h` \| `7d` \| `30d` |
 
-**ManagerClient method**:
+**ManagerClient 方法**：
 
 ```typescript
 async getMemberAnalytics(
@@ -191,18 +181,18 @@ async getMemberAnalytics(
 
 ### 3.4 `get_sparklines`
 
-**Endpoint**: `GET /v1/analytics/saas/sparklines`
+**端点**：`GET /v1/analytics/saas/sparklines`
 
-**Why it's needed**: Lightweight 7-day multi-metric trend snapshot in a single call.
-Unique data not available through any other tool.
+**必要性**：轻量级 7 天多指标趋势快照，一次调用即可获取。
+数据独特，其他工具无法替代。
 
-**Parameters**:
+**参数**：
 
-| Name      | Type   | Required | Default | Description                                    |
-|-----------|--------|----------|---------|------------------------------------------------|
-| `metrics` | string | No       | `all`   | Comma-separated keys or `all`; e.g. `spend,requests` |
+| 名称      | 类型   | 必填 | 默认值 | 说明                                         |
+|-----------|--------|------|--------|----------------------------------------------|
+| `metrics` | string | 否   | `all`  | 逗号分隔的指标键名或 `all`；如 `spend,requests` |
 
-**ManagerClient method**:
+**ManagerClient 方法**：
 
 ```typescript
 async getSparklines(metrics = "all"): Promise<unknown> {
@@ -213,29 +203,28 @@ async getSparklines(metrics = "all"): Promise<unknown> {
 }
 ```
 
-## 4. Composite Tools (5)
+## 4. 组合工具（5 个）
 
-All composite tools share these conventions:
+所有组合工具共享以下约定：
 
-- Use `Promise.allSettled()` for concurrent sub-calls
-- Return `_meta: { partial: boolean, failedSteps: string[] }` for degradation
-  visibility
-- Wrapped in `safeCall()` for rate limiting and top-level error handling
-- Perform data joining / computation in the handler before returning
+- 使用 `Promise.allSettled()` 并发子调用
+- 返回 `_meta: { partial: boolean, failedSteps: string[] }` 标示降级状态
+- 每个子调用单独通过 `rateLimitedCall()` 做限流（详见第 6 节）
+- 在 handler 内完成数据拼接/计算后返回
 
 ### 4.1 `diagnose_cost_anomaly`
 
-**Purpose**: One-call answer to "are there cost anomalies and where?"
+**用途**：一次调用回答「有没有成本异常？异常在哪里？」
 
-**Internal orchestration**:
-1. `getAnalyticsCostsRange(currentWindow)` — current window multi-dimension breakdown
-2. `getAnalyticsCostsRange(previousWindow)` — previous window (equal-length, immediately
-   preceding) for comparison — requires **new helper** `periodToTwoWindows()` that
-   computes `{current: {dateFrom, dateTo}, previous: {dateFrom, dateTo}}`
-3. `getWorkspaceOverview()` — global KPI baseline
-4. `getAnalyticsModels(period)` — per-model split
+**内部编排**：
+1. `getAnalyticsCostsRange(currentWindow)` — 当前窗口多维度成本分拆
+2. `getAnalyticsCostsRange(previousWindow)` — 上一窗口（等长、紧邻前一段）用于对比
+   — 需要**新辅助函数** `periodToTwoWindows()`，计算
+   `{current: {dateFrom, dateTo}, previous: {dateFrom, dateTo}}`
+3. `getWorkspaceOverview()` — 全局 KPI 基线
+4. `getAnalyticsModels(period)` — 按模型分拆
 
-**New utility** — `periodToTwoWindows(period: "7d" | "30d")`:
+**新工具函数** — `periodToTwoWindows(period: "7d" | "30d")`：
 ```typescript
 function periodToTwoWindows(period: "7d" | "30d") {
   const days = period === "7d" ? 7 : 30;
@@ -255,23 +244,22 @@ function periodToTwoWindows(period: "7d" | "30d") {
 }
 ```
 
-**Computation logic**:
-- Sum cost from each window's breakdown to get total current vs total previous
-- Match entities by ID across the two windows to compute per-entity delta
-- Find top 3 dimensions with largest |changePercent|
-- Rank by |change|, tag severity: >50% = `high`, 20-50% = `medium`, <20% = `low`
+**计算逻辑**：
+- 对两个窗口的 breakdown 分别求和，得到当前 vs 上期总成本
+- 通过 ID 匹配两个窗口的实体，计算逐实体环比变化
+- 找出 |变化率| 最大的前 3 个维度
+- 按 |变化率| 降序排列，标记严重度：>50% = `high`，20-50% = `medium`，<20% = `low`
 
-**Note**: The `/v1/analytics/saas/costs` endpoint returns a **single-window**
-breakdown (no built-in previous period). Period-over-period comparison requires
-two separate calls with manually computed date ranges.
+**注意**：`/v1/analytics/saas/costs` 端点返回**单窗口** breakdown（无内置上期
+对比）。环比对比需要用手动计算的日期范围发起两次调用。
 
-**Parameters**:
+**参数**：
 
-| Name     | Type | Required | Default | Description                                      |
-|----------|------|----------|---------|--------------------------------------------------|
-| `period` | enum | No       | `30d`   | `7d` \| `30d`; compared with equal previous window |
+| 名称     | 类型 | 必填 | 默认值 | 说明                                        |
+|----------|------|------|--------|---------------------------------------------|
+| `period` | enum | 否   | `30d`  | `7d` \| `30d`；与等长的上一窗口做对比       |
 
-**Output structure**:
+**输出结构**：
 
 ```typescript
 {
@@ -289,33 +277,31 @@ two separate calls with manually computed date ranges.
     changePercent: number,
     severity: "high" | "medium" | "low"
   }>,
-  overview: object,       // raw workspace overview
+  overview: object,       // 原始工作区总览
   _meta: { partial: boolean, failedSteps: string[] }
 }
 ```
 
 ### 4.2 `get_executive_dashboard`
 
-**Purpose**: Management-level one-call global view — "how is everything right now
-and which direction are we heading?"
+**用途**：管理层一览 —— 一次调用获得「全局现在怎么样 + 趋势往哪走」。
 
-**Internal orchestration**:
-1. `getLive24h(5)` — real-time 24h panel
-2. `getSparklines("all")` — 7-day multi-metric trends
-3. `getWorkspaceOverview()` — period KPIs
+**内部编排**：
+1. `getLive24h(5)` — 实时 24h 面板
+2. `getSparklines("all")` — 7 天多指标趋势
+3. `getWorkspaceOverview()` — 周期 KPI
 
-**Computation logic**:
-- Aggregate three data blocks directly
-- Tag each sparkline with trend direction (up / down / flat) by comparing first
-  and last values
+**计算逻辑**：
+- 直接聚合三块数据
+- 为每个迷你图标记趋势方向（up / down / flat），通过比较首尾值判断
 
-**Parameters**:
+**参数**：
 
-| Name                | Type   | Required | Default | Description                    |
-|---------------------|--------|----------|---------|--------------------------------|
-| `sparkline_metrics` | string | No       | `all`   | Which sparkline metrics to include |
+| 名称                | 类型   | 必填 | 默认值 | 说明                     |
+|---------------------|--------|------|--------|--------------------------|
+| `sparkline_metrics` | string | 否   | `all`  | 需要包含的迷你图指标     |
 
-**Output structure**:
+**输出结构**：
 
 ```typescript
 {
@@ -332,7 +318,7 @@ and which direction are we heading?"
     totalRequests: number,
     totalCost: number,
     successRate: number,
-    // ...other KPIs
+    // ...其他 KPI
   },
   _meta: { partial: boolean, failedSteps: string[] }
 }
@@ -340,27 +326,26 @@ and which direction are we heading?"
 
 ### 4.3 `drill_down_spend`
 
-**Purpose**: Layer-by-layer drill from workspace total spend to root cause —
-"where is the money going?"
+**用途**：从工作区总消费逐层钻透到根因 —— 「钱花在哪了？」
 
-**Internal orchestration** (varies by `dimension`):
+**内部编排**（按 `dimension` 参数分支）：
 
-| `dimension`    | Top-level call                    | 2nd-level call (if `entity_id` provided) |
-|----------------|-----------------------------------|------------------------------------------|
-| `"department"` | `getAnalyticsCosts(period)` → department items | `getDepartmentAnalytics(entity_id, period)` |
-| `"agent"`      | `getAnalyticsCosts(period)` → agent items      | `getAgentAnalytics(entity_id, period)`      |
-| `"model"`      | `getAnalyticsModels(period)`                    | N/A (models have no sub-drill)              |
+| `dimension`    | 一级调用                              | 二级调用（提供 `entity_id` 时）             |
+|----------------|---------------------------------------|---------------------------------------------|
+| `"department"` | `getAnalyticsCosts(period)` → 部门项  | `getDepartmentAnalytics(entity_id, period)` |
+| `"agent"`      | `getAnalyticsCosts(period)` → 智能体项 | `getAgentAnalytics(entity_id, period)`      |
+| `"model"`      | `getAnalyticsModels(period)`          | 不适用（模型无子钻透）                      |
 
-**Parameters**:
+**参数**：
 
-| Name        | Type   | Required | Default      | Description                              |
-|-------------|--------|----------|--------------|------------------------------------------|
-| `dimension` | enum   | No       | `department` | `department` \| `agent` \| `model`       |
-| `entity_id` | uuid   | No       | —            | Drill into specific entity (2nd level)   |
-| `period`    | enum   | No       | `30d`        | `7d` \| `30d`                            |
-| `limit`     | int    | No       | 10           | Max items per level (1-50)               |
+| 名称        | 类型   | 必填 | 默认值       | 说明                                |
+|-------------|--------|------|--------------|-------------------------------------|
+| `dimension` | enum   | 否   | `department` | `department` \| `agent` \| `model`  |
+| `entity_id` | uuid   | 否   | —            | 钻透到具体实体（二级）              |
+| `period`    | enum   | 否   | `30d`        | `7d` \| `30d`                       |
+| `limit`     | int    | 否   | 10           | 每级最大条数（1-50）                |
 
-**Output structure**:
+**输出结构**：
 
 ```typescript
 {
@@ -371,13 +356,13 @@ and which direction are we heading?"
     id: string,
     cost: number,
     requestCount: number,
-    percentage: number      // share of total
+    percentage: number      // 占总量百分比
   }>,
   drillDown: null | {
     entityName: string,
     dailySeries: Array<object>,
     models: Array<object>
-    // ...detail fields vary by entity type
+    // ...详情字段因实体类型而异
   },
   _meta: { partial: boolean, failedSteps: string[] }
 }
@@ -385,41 +370,38 @@ and which direction are we heading?"
 
 ### 4.4 `find_idle_resources`
 
-**Purpose**: Scan for low-usage or zero-usage resources with cleanup suggestions —
-"are there wasted keys or agents?"
+**用途**：扫描低用量或零用量资源，给出清理建议 —— 「有没有浪费的密钥/智能体？」
 
-**Internal orchestration**:
-1. `listVirtualKeys()` — full key list (response includes `spentCents` and `status`
-   per key, sufficient for key-level idle detection without analytics join)
-2. `listAgents()` — full agent list
-3. `getAnalyticsCosts(period)` — agent-dimension spend breakdown (for agent idle
-   detection only; keys use their own `spentCents` field)
+**内部编排**：
+1. `listVirtualKeys()` — 全量密钥列表（响应含每个密钥的 `spentCents` 和 `status`，
+   足够做密钥级闲置检测，无需分析数据关联）
+2. `listAgents()` — 全量智能体列表
+3. `getAnalyticsCosts(period)` — 智能体维度消费 breakdown（仅用于智能体闲置检测；
+   密钥使用其自身的 `spentCents` 字段）
 
-**Computation logic**:
-- **Keys**: Use `VirtualKeyResponse.spentCents` directly — `spentCents === 0` → `idle`;
-  `spentCents > 0` but below 10% of average across all keys → `low_usage`.
-  No analytics join needed (costs breakdown has master_key dimension, not virtual key).
-  **Note**: `spentCents` is a **lifetime** cumulative field, not period-scoped.
-  The `period` parameter only affects agent idle detection. Tool output should
-  clarify this distinction to prevent user confusion.
-- **Agents**: Join agent list with costs breakdown agent dimension by entity ID.
-  0 requests in window → `idle`; below 10% of average → `low_usage`.
-  Agent idle detection **is** period-scoped (uses costs breakdown for the given window).
-- Sort by idleness, attach suggestion: `revoke` / `investigate` / `keep`
+**计算逻辑**：
+- **密钥**：直接使用 `VirtualKeyResponse.spentCents` — `spentCents === 0` → `idle`；
+  `spentCents > 0` 但低于所有密钥平均值 10% → `low_usage`。
+  无需分析数据关联（成本 breakdown 维度是主密钥而非虚拟密钥）。
+  **注意**：`spentCents` 是**累计生命周期**字段，非窗口范围内。`period` 参数
+  仅影响智能体闲置检测。工具输出应注明此区别以避免用户混淆。
+- **智能体**：将智能体列表与成本 breakdown 智能体维度通过 ID 关联。
+  窗口内 0 请求 → `idle`；低于平均值 10% → `low_usage`。
+  智能体闲置检测**是**窗口范围内的（使用给定窗口的成本 breakdown）。
+- 按闲置程度排序，附加建议操作：`revoke` / `investigate` / `keep`
 
-**Pagination**: Both `listVirtualKeys()` and `listAgents()` are paginated (default
-`pageSize=50`). The handler must loop pages until all entries are fetched, or use
-a large `pageSize` (e.g., 200) to minimize round-trips. If the total exceeds a
-reasonable cap (e.g., 500), truncate and note in `_meta`.
+**分页处理**：`listVirtualKeys()` 和 `listAgents()` 均分页（默认 `pageSize=50`）。
+handler 需循环获取所有页面，或使用较大的 `pageSize`（如 200）以减少往返。
+若总数超出合理上限（如 500），截断并在 `_meta` 中注明。
 
-**Parameters**:
+**参数**：
 
-| Name      | Type | Required | Default | Description                     |
-|-----------|------|----------|---------|---------------------------------|
-| `period`  | enum | No       | `30d`   | `7d` \| `30d` lookback window  |
-| `include` | enum | No       | `all`   | `all` \| `keys` \| `agents`    |
+| 名称      | 类型 | 必填 | 默认值 | 说明                         |
+|-----------|------|------|--------|------------------------------|
+| `period`  | enum | 否   | `30d`  | `7d` \| `30d` 回溯窗口      |
+| `include` | enum | 否   | `all`  | `all` \| `keys` \| `agents` |
 
-**Output structure**:
+**输出结构**：
 
 ```typescript
 {
@@ -451,18 +433,17 @@ reasonable cap (e.g., 500), truncate and note in `_meta`.
 
 ### 4.5 `compare_entity_periods`
 
-**Purpose**: Flexible period-over-period comparison for any entity — "how does this
-department/agent/member compare this week vs last week?"
+**用途**：任意实体的灵活环比对比 —— 「这个部门/智能体/成员上周 vs 本周表现如何？」
 
-**Internal orchestration**:
+**内部编排**：
 
-The existing entity analytics endpoints (`/agents/{id}/analytics`,
-`/departments/{id}/analytics`, `/members/{id}/analytics`) only accept a relative
-`days` parameter anchored to today — they **cannot** query a previous window.
+现有实体分析端点（`/agents/{id}/analytics`、`/departments/{id}/analytics`、
+`/members/{id}/analytics`）仅接受相对于「今天」的 `days` 参数 — **无法**查询
+上一窗口。
 
-Instead, this tool uses the **SaaS usage endpoint** (`GET /api/v1/analytics/usage`)
-which supports both absolute date ranges (`dateFrom`, `dateTo`) and entity filters
-(`agentId`, `memberId`, `departmentId`). This requires a **new ManagerClient method**:
+因此本工具使用 **SaaS 用量端点**（`GET /api/v1/analytics/usage`），该端点同时
+支持绝对日期范围（`dateFrom`、`dateTo`）和实体筛选器（`agentId`、`memberId`、
+`departmentId`）。需要**新 ManagerClient 方法**：
 
 ```typescript
 async getSaasUsageForEntity(
@@ -477,19 +458,18 @@ async getSaasUsageForEntity(
 }
 ```
 
-The handler calls this method **twice** (current window + previous window, computed
-via `periodToTwoWindows()`), then aggregates the daily series from each call to
-produce per-period totals.
+handler 调用此方法**两次**（当前窗口 + 上一窗口，通过 `periodToTwoWindows()` 计算），
+然后聚合每次调用的日级序列以产出逐窗口汇总。
 
-**Parameters**:
+**参数**：
 
-| Name          | Type   | Required | Default | Description                                |
-|---------------|--------|----------|---------|--------------------------------------------|
-| `entity_type` | enum   | Yes      | —       | `department` \| `agent` \| `member`        |
-| `entity_id`   | uuid   | Yes      | —       | Entity UUID                                |
-| `period`      | enum   | No       | `30d`   | `7d` \| `30d` — previous window is same length, immediately preceding |
+| 名称          | 类型   | 必填 | 默认值 | 说明                                        |
+|---------------|--------|------|--------|---------------------------------------------|
+| `entity_type` | enum   | 是   | —      | `department` \| `agent` \| `member`         |
+| `entity_id`   | uuid   | 是   | —      | 实体 UUID                                   |
+| `period`      | enum   | 否   | `30d`  | `7d` \| `30d` — 上一窗口等长且紧邻前一段   |
 
-**Output structure**:
+**输出结构**：
 
 ```typescript
 {
@@ -509,7 +489,7 @@ produce per-period totals.
     avgCostPerReq: number
   },
   changes: {
-    costChange: number,       // percentage
+    costChange: number,       // 百分比
     requestChange: number,
     tokenChange: number,
     avgCostChange: number
@@ -518,82 +498,81 @@ produce per-period totals.
 }
 ```
 
-## 5. Enhanced Prompts (2)
+## 5. 增强 Prompt（2 个）
 
-### 5.1 `workspace_health_check` (Manager only)
+### 5.1 `workspace_health_check`（仅 Manager）
 
-**Purpose**: Guide the AI through a systematic workspace health assessment.
+**用途**：引导 AI 完成系统化的工作区健康评估。
 
-**Parameters**:
+**参数**：
 
-| Name      | Type | Default | Description                                   |
-|-----------|------|---------|-----------------------------------------------|
-| `urgency` | enum | `quick` | `quick` = realtime snapshot; `thorough` = full |
+| 名称      | 类型 | 默认值  | 说明                                    |
+|-----------|------|---------|------------------------------------------|
+| `urgency` | enum | `quick` | `quick` = 实时快照；`thorough` = 全面   |
 
-**Quick mode** directs the model to call:
-1. `get_live_24h` — real-time status
-2. `get_sparklines` — 7-day trend snapshot
-3. Output brief health summary (normal / warning / critical + reason)
+**快速模式**引导模型调用：
+1. `get_live_24h` — 实时状态
+2. `get_sparklines` — 7 天趋势快照
+3. 输出简短健康摘要（正常/警告/严重 + 原因）
 
-**Thorough mode** directs the model to call:
-1. `get_executive_dashboard` — global view
-2. `diagnose_cost_anomaly` — anomaly detection
-3. `get_usage_timeseries(metric="success_rate")` — success rate trend
-4. `get_usage_timeseries(metric="latency")` — latency trend
-5. Output full Markdown health report
+**详细模式**引导模型调用：
+1. `get_executive_dashboard` — 全局视图
+2. `diagnose_cost_anomaly` — 异常检测
+3. `get_usage_timeseries(metric="success_rate")` — 成功率趋势
+4. `get_usage_timeseries(metric="latency")` — 延迟趋势
+5. 输出完整 Markdown 健康报告
 
-**Output format constraint** (in prompt text):
+**输出格式约束**（写入 prompt 文本）：
 > "Output a Markdown health report with sections: Status (🟢/🟡/🔴), Key Metrics,
 > Trends, Anomalies (if any), Recommended Actions. Do not assume data that tools
 > did not return."
 
-### 5.2 `cost_deep_dive` (Manager only)
+### 5.2 `cost_deep_dive`（仅 Manager）
 
-**Purpose**: End-to-end cost investigation — from anomaly detection to root cause
-to actionable recommendations.
+**用途**：端到端成本调查 —— 从异常发现到根因定位到可行建议。
 
-**Parameters**:
+**参数**：
 
-| Name        | Type   | Required | Default     | Description                                  |
-|-------------|--------|----------|-------------|----------------------------------------------|
-| `target`    | enum   | No       | `workspace` | `workspace` \| `department` \| `agent`       |
-| `target_id` | uuid   | No       | —           | Required when target is department or agent   |
+| 名称        | 类型   | 必填 | 默认值      | 说明                                      |
+|-------------|--------|------|-------------|-------------------------------------------|
+| `target`    | enum   | 否   | `workspace` | `workspace` \| `department` \| `agent`    |
+| `target_id` | uuid   | 否   | —           | 当 target 为 department 或 agent 时必填   |
 
-**Directed workflow**:
-1. `diagnose_cost_anomaly(period="30d")` — discover anomaly dimensions
-2. `drill_down_spend(dimension=<most anomalous>, period="30d")` — drill to entities
-3. `compare_entity_periods` for top 3 spenders — validate with period comparison
-4. `get_cost_by_model` — check model-level cost anomalies
-5. `find_idle_resources` (if idle suspicion) — cleanup opportunities
-6. Synthesize full report
+**引导工作流**：
+1. `diagnose_cost_anomaly(period="30d")` — 发现异常维度
+2. `drill_down_spend(dimension=<最异常维度>, period="30d")` — 钻透到实体
+3. 对 Top 3 消费实体调用 `compare_entity_periods` — 环比验证
+4. `get_cost_by_model` — 检查模型层面成本异常
+5. `find_idle_resources`（如有闲置嫌疑）— 清理机会
+6. 综合输出完整报告
 
-**Output format constraint** (in prompt text):
+**输出格式约束**（写入 prompt 文本）：
 > "Output a Markdown deep-dive report: Executive Summary, Root Cause Analysis
 > (with data evidence), Impact Quantification ($), Prioritized Recommendations
 > (with expected savings). Never fabricate numbers not returned by tools."
 
-## 6. Error Handling & Degradation
+## 6. 错误处理与降级
 
-### Composite Tool Resilience
+### 组合工具弹性
 
 ```typescript
 async function compositeHandler(deps: ToolDeps): Promise<CallToolResult> {
   const manager = requireManager(deps);
   const results = await Promise.allSettled([
-    manager.methodA(),
-    manager.methodB(),
-    manager.methodC(),
+    rateLimitedCall(() => manager.getAnalyticsCostsRange(currentWindow)),
+    rateLimitedCall(() => manager.getAnalyticsCostsRange(previousWindow)),
+    rateLimitedCall(() => manager.getWorkspaceOverview()),
   ]);
 
   const failedSteps: string[] = [];
   const [a, b, c] = results.map((r, i) => {
     if (r.status === "fulfilled") return r.value;
-    failedSteps.push(["methodA", "methodB", "methodC"][i]);
+    failedSteps.push(["costsCurrentWindow", "costsPreviousWindow", "overview"][i]);
     return null;
   });
 
   const output = {
-    /* ... assemble from a, b, c, skipping nulls ... */
+    /* ... 从 a, b, c 组装，跳过 null ... */
     _meta: { partial: failedSteps.length > 0, failedSteps },
   };
 
@@ -603,58 +582,47 @@ async function compositeHandler(deps: ToolDeps): Promise<CallToolResult> {
 }
 ```
 
-### Rate Limiting
+### 限流
 
-The existing `safeCall()` wraps entire tool handlers and calls `acquireGlobalRateSlot()`
-once. However, **composite tools make multiple HTTP requests per invocation** — the
-individual `ManagerClient` methods do NOT call `acquireGlobalRateSlot()` internally.
+现有 `safeCall()` 包装整个工具 handler 并调用 `acquireGlobalRateSlot()` 一次。
+但**组合工具每次调用发起多个 HTTP 请求** — 各个 `ManagerClient` 方法内部并不调用
+`acquireGlobalRateSlot()`。
 
-**Solution**: Composite tool handlers must wrap each sub-call in its own rate-limit
-acquisition. Introduce a helper `rateLimitedCall<T>(fn: () => Promise<T>): Promise<T>`
-that calls `acquireGlobalRateSlot()` then executes `fn()`. The composite handler
-itself does NOT use `safeCall()` for the outer wrapper (to avoid double rate-limiting);
-instead it handles error mapping manually or via a lightweight `compositeCall()` wrapper.
+**解决方案**：组合工具 handler 需对每个子调用单独获取限流配额。引入辅助函数
+`rateLimitedCall<T>(fn: () => Promise<T>): Promise<T>`，先调用
+`acquireGlobalRateSlot()` 再执行 `fn()`。组合 handler 自身**不**使用
+`safeCall()` 作为外层包装（避免双重限流），而是手动执行错误到 `CallToolResult`
+的映射：捕获顶层错误，格式化为 `{ isError: true, content: [...] }`。
 
 ```typescript
 async function rateLimitedCall<T>(fn: () => Promise<T>): Promise<T> {
   await acquireGlobalRateSlot();
   return fn();
 }
-
-// Usage in composite handler:
-const results = await Promise.allSettled([
-  rateLimitedCall(() => manager.getAnalyticsCostsRange(currentWindow)),
-  rateLimitedCall(() => manager.getAnalyticsCostsRange(previousWindow)),
-  rateLimitedCall(() => manager.getWorkspaceOverview()),
-]);
 ```
 
-Composite handlers do **not** use `safeCall()` for the outer wrapper (to avoid
-double rate-limiting). Instead, they perform manual error-to-`CallToolResult`
-mapping: catch top-level errors, format as `{ isError: true, content: [...] }`.
+**注意**：组合工具每次调用消耗 2-4 个限流配额。工具描述中应注明此点，
+以避免 AI 模型过度调用组合工具。
 
-**Consideration**: Composite tools consume 2-4 rate-limit slots per invocation.
-The tool descriptions should note this so AI models don't over-call composites.
+## 7. 测试策略
 
-## 7. Testing Strategy
+- **单元测试**：每个新 `ManagerClient` 方法（mock axios）
+- **单元测试**：组合逻辑（mock client 方法，验证组装与降级）
+- **集成测试**：组合工具对接真实 API（可选，环境变量门控）
+- 使用现有 `vitest` 配置
 
-- **Unit tests** for each new `ManagerClient` method (mock axios)
-- **Unit tests** for composite logic (mock client methods, verify assembly & degradation)
-- **Integration tests** for composite tools with real API (optional, env-gated)
-- Use existing `vitest` setup
+## 8. 范围外
 
-## 8. Out of Scope
+- 请求日志（JWT-only，PAT 无法访问）
+- VK 模式新增（不为 VK 添加任何原子或组合工具）
+- MCP 资源（模型目录等 — 独立迭代）
+- Python SDK（独立设计文档：`2026-04-01-track2-python-sdk-design.md`）
 
-- Request logs (JWT-only, PAT cannot access)
-- VK-mode additions (no new atomic or composite tools for VK)
-- MCP Resources (model catalog etc. — separate track)
-- Python SDK (separate design doc: `2026-04-01-track2-python-sdk-design.md`)
+## 9. 工具描述（AI 选择辅助）
 
-## 9. Tool Descriptions for AI Selection
+每个 `server.tool()` 注册必须包含清晰的描述字符串：
 
-Each `server.tool()` registration must include a clear description string:
-
-| Tool                      | Description                                                                                  |
+| 工具                      | 描述                                                                                         |
 |---------------------------|----------------------------------------------------------------------------------------------|
 | `get_live_24h`            | "Real-time rolling 24-hour dashboard: top models, top keys, and summary KPIs."               |
 | `get_usage_timeseries`    | "Time-series data for a single metric (cost/requests/tokens/latency/success_rate) with day or hour granularity." |
@@ -666,26 +634,26 @@ Each `server.tool()` registration must include a clear description string:
 | `find_idle_resources`     | "Scans virtual keys and agents for zero or low usage, returns cleanup suggestions. Consumes 2-3 API calls." |
 | `compare_entity_periods`  | "Compares a department/agent/member's KPIs across two consecutive time windows (current vs previous). Consumes 2 API calls." |
 
-## 10. New ManagerClient Methods (6 total)
+## 10. 新 ManagerClient 方法（共 6 个）
 
-| Method                   | Used by              | Endpoint (backend-saas-service)           |
-|--------------------------|----------------------|-------------------------------------------|
-| `getLive24h`             | Atomic tool          | `GET /api/v1/analytics/live-24h`          |
-| `getUsageTimeseries`     | Atomic tool          | `GET /api/v1/analytics/usage/timeseries`  |
-| `getMemberAnalytics`     | Atomic tool          | `GET /api/v1/analytics/members/{id}/analytics` |
-| `getSparklines`          | Atomic tool          | `GET /api/v1/analytics/sparklines`        |
-| `getAnalyticsCostsRange` | `diagnose_cost_anomaly` | `GET /api/v1/analytics/costs` (with explicit dateFrom/dateTo) |
-| `getSaasUsageForEntity`  | `compare_entity_periods` | `GET /api/v1/analytics/usage` (with entity filters + date range) |
+| 方法                     | 使用者           | 端点（backend-saas-service）                |
+|--------------------------|------------------|---------------------------------------------|
+| `getLive24h`             | 原子工具         | `GET /api/v1/analytics/live-24h`            |
+| `getUsageTimeseries`     | 原子工具         | `GET /api/v1/analytics/usage/timeseries`    |
+| `getMemberAnalytics`     | 原子工具         | `GET /api/v1/analytics/members/{id}/analytics` |
+| `getSparklines`          | 原子工具         | `GET /api/v1/analytics/sparklines`          |
+| `getAnalyticsCostsRange` | `diagnose_cost_anomaly` | `GET /api/v1/analytics/costs`（显式 dateFrom/dateTo） |
+| `getSaasUsageForEntity`  | `compare_entity_periods` | `GET /api/v1/analytics/usage`（实体筛选 + 日期范围） |
 
-**Note**: `getAnalyticsCostsRange` is distinct from the existing `getAnalyticsCosts`
-which uses `periodToDateRange()`. The new method accepts raw `dateFrom`/`dateTo`
-to enable two-window comparison.
+**注意**：`getAnalyticsCostsRange` 与现有 `getAnalyticsCosts` 区分开来。后者使用
+`periodToDateRange()` 辅助函数；新方法接受原始 `dateFrom`/`dateTo` 以支持
+双窗口对比。
 
-## 11. Summary
+## 11. 总结
 
-| Layer     | Count | Names                                                                                    |
-|-----------|-------|------------------------------------------------------------------------------------------|
-| Atomic    | 4     | `get_live_24h`, `get_usage_timeseries`, `get_member_analytics`, `get_sparklines`         |
-| Composite | 5     | `diagnose_cost_anomaly`, `get_executive_dashboard`, `drill_down_spend`, `find_idle_resources`, `compare_entity_periods` |
-| Prompt    | 2     | `workspace_health_check`, `cost_deep_dive`                                               |
-| **Total** | **11**| Manager mode goes from 15→24 tools, 2→4 prompts                                         |
+| 层       | 数量  | 名称                                                                                     |
+|----------|-------|------------------------------------------------------------------------------------------|
+| 原子     | 4     | `get_live_24h`、`get_usage_timeseries`、`get_member_analytics`、`get_sparklines`         |
+| 组合     | 5     | `diagnose_cost_anomaly`、`get_executive_dashboard`、`drill_down_spend`、`find_idle_resources`、`compare_entity_periods` |
+| Prompt   | 2     | `workspace_health_check`、`cost_deep_dive`                                               |
+| **合计** | **11**| Manager 模式从 15→24 工具，2→4 prompt                                                    |
