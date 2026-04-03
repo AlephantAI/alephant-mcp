@@ -13,6 +13,8 @@ import {
   buildAnomalyResult,
   buildDashboardResult,
   buildCompareResult,
+  extractCostBreakdownItems,
+  sparklineSeriesFromResponse,
   registerManagerCompositeTools,
 } from "./analytics-composite.js";
 import { resetGlobalRateLimiter } from "../../utils/rate-limiter.js";
@@ -111,6 +113,40 @@ describe("buildDashboardResult", () => {
   });
 });
 
+describe("extractCostBreakdownItems", () => {
+  it("flattens dimension breakdown into rows", () => {
+    const raw = {
+      data: {
+        breakdown: [
+          {
+            dimension: "agent",
+            items: [{ id: "a1", name: "A1", cost: 10 }],
+          },
+        ],
+      },
+    };
+    expect(extractCostBreakdownItems(raw)).toEqual([
+      { dimension: "agent", id: "a1", name: "A1", cost: 10 },
+    ]);
+  });
+
+  it("returns empty when data is missing breakdown", () => {
+    expect(extractCostBreakdownItems({ data: { items: [] } })).toEqual([]);
+  });
+});
+
+describe("sparklineSeriesFromResponse", () => {
+  it("returns null when only period metadata is present", () => {
+    expect(sparklineSeriesFromResponse({ data: { period: "7d" } })).toBeNull();
+  });
+
+  it("returns series map when arrays are present", () => {
+    expect(
+      sparklineSeriesFromResponse({ data: { period: "7d", spend: [1, 2], requests: [3, 4] } }),
+    ).toEqual({ spend: [1, 2], requests: [3, 4] });
+  });
+});
+
 describe("buildCompareResult", () => {
   it("computes changes as percentage", () => {
     const current = { cost: 200, requests: 100, tokens: 5000 };
@@ -205,6 +241,31 @@ describe("find_idle_resources (integration)", () => {
     expect(body.summary.totalAgents).toBe(2);
     expect(body.summary.idleAgentsCount).toBe(2);
     expect(body.idleAgents.map((a) => a.id).sort()).toEqual(["ag-1", "ag-2"]);
+  });
+});
+
+describe("get_executive_dashboard (integration)", () => {
+  it("merges API rejection into _meta.failedSteps", async () => {
+    const mockManager: Partial<ManagerClient> = {
+      getLive24h: vi.fn().mockRejectedValue(new Error("timeout")),
+      getSparklines: vi.fn().mockResolvedValue({ data: { spend: [1, 2, 3] } }),
+      getWorkspaceOverview: vi.fn().mockResolvedValue({ code: 0, data: {} }),
+    };
+    const res = await callCompositeTool(mockManager, "get_executive_dashboard", {});
+    const body = parseToolJson(res) as { _meta: { failedSteps: string[]; partial: boolean } };
+    expect(body._meta.failedSteps).toContain("live24h");
+    expect(body._meta.partial).toBe(true);
+  });
+
+  it("marks sparklines partial when response has no series arrays", async () => {
+    const mockManager: Partial<ManagerClient> = {
+      getLive24h: vi.fn().mockResolvedValue({ ok: true }),
+      getSparklines: vi.fn().mockResolvedValue({ data: { period: "7d" } }),
+      getWorkspaceOverview: vi.fn().mockResolvedValue({ code: 0, data: {} }),
+    };
+    const res = await callCompositeTool(mockManager, "get_executive_dashboard", {});
+    const body = parseToolJson(res) as { _meta: { failedSteps: string[] } };
+    expect(body._meta.failedSteps).toContain("sparklines");
   });
 });
 

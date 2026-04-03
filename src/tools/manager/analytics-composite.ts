@@ -8,6 +8,92 @@ import { periodToTwoWindows, type ComparisonPeriod } from "../../utils/analytics
 
 type BreakdownItem = { dimension: string; id: string; name: string; cost: number };
 
+type TopLevelSpendRow = {
+  name: string;
+  id: string;
+  cost: number;
+  requestCount: number;
+  percentage: number;
+};
+
+/** `response.data` when it is a plain object (excludes top-level array payloads). */
+function analyticsDataObject(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const data = (raw as Record<string, unknown>).data;
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    return data as Record<string, unknown>;
+  }
+  return null;
+}
+
+/** Rows for model list or flat costs: `data` as array, or `data.items`. */
+function analyticsTopLevelItemArray(raw: unknown): unknown[] {
+  if (!raw || typeof raw !== "object") return [];
+  const d = (raw as Record<string, unknown>).data;
+  if (Array.isArray(d)) return d;
+  if (d && typeof d === "object" && Array.isArray((d as Record<string, unknown>).items)) {
+    return (d as Record<string, unknown>).items as unknown[];
+  }
+  return [];
+}
+
+export function extractCostBreakdownItems(raw: unknown): BreakdownItem[] {
+  const data = analyticsDataObject(raw);
+  if (!data) return [];
+  const breakdown = data.breakdown;
+  if (!Array.isArray(breakdown)) return [];
+  const items: BreakdownItem[] = [];
+  for (const dim of breakdown) {
+    if (!dim || typeof dim !== "object") continue;
+    const dimension = (dim as Record<string, unknown>).dimension as string;
+    const dimItems = (dim as Record<string, unknown>).items;
+    if (!Array.isArray(dimItems)) continue;
+    for (const item of dimItems) {
+      if (!item || typeof item !== "object") continue;
+      const it = item as Record<string, unknown>;
+      items.push({
+        dimension,
+        id: String(it.id ?? it.entityId ?? ""),
+        name: String(it.name ?? it.label ?? ""),
+        cost: Number(it.cost ?? it.totalCost ?? 0),
+      });
+    }
+  }
+  return items;
+}
+
+function mapItemsToTopLevelSpendRows(items: unknown[]): TopLevelSpendRow[] {
+  const mapped = (items as Record<string, unknown>[]).map((it) => ({
+    name: String(it.name ?? it.label ?? ""),
+    id: String(it.id ?? it.entityId ?? ""),
+    cost: Number(it.cost ?? it.totalCost ?? 0),
+    requestCount: Number(it.requests ?? it.totalRequests ?? it.requestCount ?? 0),
+    percentage: 0,
+  }));
+  const totalCost = mapped.reduce((s, i) => s + i.cost, 0);
+  for (const m of mapped) {
+    m.percentage = totalCost > 0 ? Math.round((m.cost / totalCost) * 10000) / 100 : 0;
+  }
+  return mapped;
+}
+
+function extractTopLevelSpendFromResponse(raw: unknown): TopLevelSpendRow[] {
+  return mapItemsToTopLevelSpendRows(analyticsTopLevelItemArray(raw));
+}
+
+/** Sparkline numeric series from API; null if nothing usable (incl. empty object / only `period`). */
+export function sparklineSeriesFromResponse(raw: unknown): Record<string, number[]> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const d = (raw as Record<string, unknown>).data;
+  if (!d || typeof d !== "object") return null;
+  const out: Record<string, number[]> = {};
+  for (const [k, v] of Object.entries(d as Record<string, unknown>)) {
+    if (k === "period") continue;
+    if (Array.isArray(v)) out[k] = v as number[];
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 function classifySeverity(pct: number): "high" | "medium" | "low" {
   const abs = Math.abs(pct);
   if (abs >= 50) return "high";
@@ -156,34 +242,8 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
           return null;
         });
 
-        const extractItems = (raw: unknown): BreakdownItem[] => {
-          if (!raw || typeof raw !== "object") return [];
-          const d = (raw as Record<string, unknown>).data;
-          if (!d || typeof d !== "object") return [];
-          const breakdown = (d as Record<string, unknown>).breakdown;
-          if (!Array.isArray(breakdown)) return [];
-          const items: BreakdownItem[] = [];
-          for (const dim of breakdown) {
-            if (!dim || typeof dim !== "object") continue;
-            const dimension = (dim as Record<string, unknown>).dimension as string;
-            const dimItems = (dim as Record<string, unknown>).items;
-            if (!Array.isArray(dimItems)) continue;
-            for (const item of dimItems) {
-              if (!item || typeof item !== "object") continue;
-              const it = item as Record<string, unknown>;
-              items.push({
-                dimension,
-                id: String(it.id ?? it.entityId ?? ""),
-                name: String(it.name ?? it.label ?? ""),
-                cost: Number(it.cost ?? it.totalCost ?? 0),
-              });
-            }
-          }
-          return items;
-        };
-
-        const currentItems = extractItems(vals[0]);
-        const previousItems = extractItems(vals[1]);
+        const currentItems = extractCostBreakdownItems(vals[0]);
+        const previousItems = extractCostBreakdownItems(vals[1]);
         const result = buildAnomalyResult(currentItems, previousItems, vals[2]);
         (result as Record<string, unknown>).modelBreakdown = vals[3] ?? null;
         result._meta.failedSteps = failedSteps;
@@ -212,21 +272,20 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
           rateLimitedCall(() => manager.getWorkspaceOverview()),
         ]);
 
-        const vals = results.map((r) => r.status === "fulfilled" ? r.value : null);
+        const dashboardStepNames = ["live24h", "sparklines", "overview"] as const;
+        const apiFailedSteps: string[] = [];
+        const vals = results.map((r, i) => {
+          if (r.status === "fulfilled") return r.value;
+          apiFailedSteps.push(dashboardStepNames[i]);
+          return null;
+        });
 
-        let sparklineData: Record<string, number[]> | null = null;
-        if (vals[1] && typeof vals[1] === "object") {
-          const d = (vals[1] as Record<string, unknown>).data;
-          if (d && typeof d === "object") {
-            sparklineData = {};
-            for (const [k, v] of Object.entries(d as Record<string, unknown>)) {
-              if (k === "period") continue;
-              if (Array.isArray(v)) sparklineData[k] = v as number[];
-            }
-          }
-        }
+        const sparklineData = vals[1] ? sparklineSeriesFromResponse(vals[1]) : null;
 
         const result = buildDashboardResult(vals[0], sparklineData, vals[2]);
+        const mergedFailed = [...new Set([...apiFailedSteps, ...result._meta.failedSteps])];
+        result._meta.failedSteps = mergedFailed;
+        result._meta.partial = mergedFailed.length > 0;
         return toCallToolResult(result);
       } catch (err) {
         return errorResult(`get_executive_dashboard failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -253,28 +312,7 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
           ? await rateLimitedCall(() => manager.getAnalyticsModels(period as "7d" | "30d"))
           : await rateLimitedCall(() => manager.getAnalyticsCosts(period as "7d" | "30d"));
 
-        const extractTopLevel = (raw: unknown): Array<{ name: string; id: string; cost: number; requestCount: number; percentage: number }> => {
-          if (!raw || typeof raw !== "object") return [];
-          const d = (raw as Record<string, unknown>).data;
-          const items = Array.isArray(d) ? d
-            : (d && typeof d === "object" && Array.isArray((d as Record<string, unknown>).items))
-              ? (d as Record<string, unknown>).items as unknown[]
-              : [];
-          const mapped = (items as Record<string, unknown>[]).map((it) => ({
-            name: String(it.name ?? it.label ?? ""),
-            id: String(it.id ?? it.entityId ?? ""),
-            cost: Number(it.cost ?? it.totalCost ?? 0),
-            requestCount: Number(it.requests ?? it.totalRequests ?? it.requestCount ?? 0),
-            percentage: 0,
-          }));
-          const totalCost = mapped.reduce((s, i) => s + i.cost, 0);
-          for (const m of mapped) {
-            m.percentage = totalCost > 0 ? Math.round((m.cost / totalCost) * 10000) / 100 : 0;
-          }
-          return mapped;
-        };
-
-        const topLevel = extractTopLevel(topLevelData).slice(0, limit);
+        const topLevel = extractTopLevelSpendFromResponse(topLevelData).slice(0, limit);
 
         let drillDown: unknown = null;
         if (entity_id) {
