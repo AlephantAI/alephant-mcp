@@ -120,6 +120,53 @@ export class ManagerClient {
     return data;
   }
 
+  async getLive24h(limit = 5): Promise<unknown> {
+    const { data } = await this.http.get("/api/v1/analytics/live-24h", {
+      params: { limit },
+    });
+    return data;
+  }
+
+  async getUsageTimeseries(metric: string, granularity: string, preset: string): Promise<unknown> {
+    const { data } = await this.http.get("/api/v1/analytics/usage/timeseries", {
+      params: { metric, granularity, preset },
+    });
+    return data;
+  }
+
+  async getMemberAnalytics(memberId: string, period: AgentDeptPeriod): Promise<unknown> {
+    const days = agentPeriodToDays(period);
+    const { data } = await this.http.get(`/api/v1/analytics/members/${memberId}/analytics`, {
+      params: { days },
+    });
+    return data;
+  }
+
+  async getSparklines(metrics = "all"): Promise<unknown> {
+    const { data } = await this.http.get("/api/v1/analytics/sparklines", {
+      params: { metrics },
+    });
+    return data;
+  }
+
+  async getAnalyticsCostsRange(dateFrom: string, dateTo: string): Promise<unknown> {
+    const { data } = await this.http.get("/api/v1/analytics/costs", {
+      params: { dateFrom, dateTo },
+    });
+    return data;
+  }
+
+  async getSaasUsageForEntity(
+    dateFrom: string,
+    dateTo: string,
+    entityFilter: { agentId?: string; memberId?: string; departmentId?: string },
+  ): Promise<unknown> {
+    const { data } = await this.http.get("/api/v1/analytics/usage", {
+      params: { dateFrom, dateTo, ...entityFilter },
+    });
+    return data;
+  }
+
   getWorkspaceId(): string {
     return this.workspaceId;
   }

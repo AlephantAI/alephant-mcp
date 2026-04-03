@@ -18,3 +18,29 @@ export function agentPeriodToDays(period: AgentDeptPeriod): number {
   if (period === "7d") return 7;
   return 30;
 }
+
+export type ComparisonPeriod = "7d" | "30d";
+
+export function periodToTwoWindows(period: ComparisonPeriod): {
+  current: { dateFrom: string; dateTo: string };
+  previous: { dateFrom: string; dateTo: string };
+} {
+  const days = period === "7d" ? 7 : 30;
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+
+  const currentStart = new Date(todayUtc);
+  currentStart.setUTCDate(currentStart.getUTCDate() - (days - 1));
+
+  const previousEnd = new Date(currentStart);
+  previousEnd.setUTCDate(previousEnd.getUTCDate() - 1);
+
+  const previousStart = new Date(previousEnd);
+  previousStart.setUTCDate(previousStart.getUTCDate() - (days - 1));
+
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    current: { dateFrom: fmt(currentStart), dateTo: fmt(todayUtc) },
+    previous: { dateFrom: fmt(previousStart), dateTo: fmt(previousEnd) },
+  };
+}

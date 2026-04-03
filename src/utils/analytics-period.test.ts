@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { periodToDateRange, agentPeriodToDays } from "./analytics-period.js";
+import { periodToDateRange, agentPeriodToDays, periodToTwoWindows } from "./analytics-period.js";
 
 describe("periodToDateRange", () => {
   it("returns empty object for billing_cycle", () => {
@@ -44,5 +44,43 @@ describe("agentPeriodToDays", () => {
 
   it("returns 30 for 30d", () => {
     expect(agentPeriodToDays("30d")).toBe(30);
+  });
+});
+
+describe("periodToTwoWindows", () => {
+  it("returns two 7-day windows for 7d", () => {
+    const result = periodToTwoWindows("7d");
+    const curFrom = new Date(result.current.dateFrom);
+    const curTo = new Date(result.current.dateTo);
+    const prevFrom = new Date(result.previous.dateFrom);
+    const prevTo = new Date(result.previous.dateTo);
+    const curDays = Math.round((curTo.getTime() - curFrom.getTime()) / 86400000);
+    const prevDays = Math.round((prevTo.getTime() - prevFrom.getTime()) / 86400000);
+    expect(curDays).toBe(6);
+    expect(prevDays).toBe(6);
+  });
+
+  it("previous window ends the day before current window starts", () => {
+    const result = periodToTwoWindows("30d");
+    const curFrom = new Date(result.current.dateFrom);
+    const prevTo = new Date(result.previous.dateTo);
+    const gap = Math.round((curFrom.getTime() - prevTo.getTime()) / 86400000);
+    expect(gap).toBe(1);
+  });
+
+  it("returns two 30-day windows for 30d", () => {
+    const result = periodToTwoWindows("30d");
+    const curFrom = new Date(result.current.dateFrom);
+    const curTo = new Date(result.current.dateTo);
+    const diffDays = Math.round((curTo.getTime() - curFrom.getTime()) / 86400000);
+    expect(diffDays).toBe(29);
+  });
+
+  it("current window dateTo is today in UTC", () => {
+    const result = periodToTwoWindows("7d");
+    const today = new Date();
+    const todayStr = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
+      .toISOString().slice(0, 10);
+    expect(result.current.dateTo).toBe(todayStr);
   });
 });

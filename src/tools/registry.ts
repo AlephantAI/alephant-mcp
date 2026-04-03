@@ -10,8 +10,10 @@ import { registerManagerAnalyticsTools } from "./manager/analytics.js";
 import { registerManagerAgentTools } from "./manager/agents.js";
 import { registerManagerDepartmentTools } from "./manager/departments.js";
 import { registerManagerPolicyTools } from "./manager/policies.js";
+import { registerManagerAtomicTools } from "./manager/analytics-atomic.js";
+import { registerManagerCompositeTools } from "./manager/analytics-composite.js";
 
-/** Registers 7 tools in vk mode, 15 in manager mode (18 unique names total; shared tools in both). */
+/** Registers 7 tools in vk mode, 24 in manager mode (27 unique names total; shared tools in both). */
 export function registerTools(server: McpServer, mode: AuthMode, deps: ToolDeps): void {
   registerSharedUsageTools(server, deps);
   registerListAvailableModels(server, deps);
@@ -27,4 +29,6 @@ export function registerTools(server: McpServer, mode: AuthMode, deps: ToolDeps)
   registerManagerAgentTools(server, deps);
   registerManagerDepartmentTools(server, deps);
   registerManagerPolicyTools(server, deps);
+  registerManagerAtomicTools(server, deps);
+  registerManagerCompositeTools(server, deps);
 }
