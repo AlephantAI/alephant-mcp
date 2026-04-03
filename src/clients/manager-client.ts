@@ -98,9 +98,12 @@ export class ManagerClient {
   }
 
   async getDepartmentAnalytics(departmentId: string, period: AgentDeptPeriod): Promise<unknown> {
-    const days = agentPeriodToDays(period);
+    // Omit `days` for 30d so SaaS uses Collector default window (same as GET /departments list / Cockpit cards).
+    // 24h / 7d pass explicit rolling UTC calendar-day window.
+    const params =
+      period === "30d" ? {} : { days: agentPeriodToDays(period) };
     const { data } = await this.http.get(`/api/v1/departments/${departmentId}/analytics`, {
-      params: { days },
+      params,
     });
     return data;
   }
