@@ -38,28 +38,51 @@ function analyticsTopLevelItemArray(raw: unknown): unknown[] {
   return [];
 }
 
-export function extractCostBreakdownItems(raw: unknown): BreakdownItem[] {
+type CostBreakdownRow = {
+  dimension: string;
+  id: string;
+  name: string;
+  cost: number;
+  requests: number;
+  lastUsed: string | null;
+};
+
+/** Walk SaaS `data.breakdown` rows (shared by anomaly extraction and idle agent map). */
+function forEachCostBreakdownRow(raw: unknown, fn: (row: CostBreakdownRow) => void): void {
   const data = analyticsDataObject(raw);
-  if (!data) return [];
+  if (!data) return;
   const breakdown = data.breakdown;
-  if (!Array.isArray(breakdown)) return [];
-  const items: BreakdownItem[] = [];
+  if (!Array.isArray(breakdown)) return;
   for (const dim of breakdown) {
     if (!dim || typeof dim !== "object") continue;
-    const dimension = (dim as Record<string, unknown>).dimension as string;
+    const dimension = String((dim as Record<string, unknown>).dimension ?? "");
     const dimItems = (dim as Record<string, unknown>).items;
     if (!Array.isArray(dimItems)) continue;
     for (const item of dimItems) {
       if (!item || typeof item !== "object") continue;
       const it = item as Record<string, unknown>;
-      items.push({
+      fn({
         dimension,
         id: String(it.id ?? it.entityId ?? ""),
         name: String(it.name ?? it.label ?? ""),
         cost: Number(it.cost ?? it.totalCost ?? 0),
+        requests: Number(it.requests ?? it.totalRequests ?? 0),
+        lastUsed: (it.lastUsed ?? it.lastRequestAt ?? null) as string | null,
       });
     }
   }
+}
+
+export function extractCostBreakdownItems(raw: unknown): BreakdownItem[] {
+  const items: BreakdownItem[] = [];
+  forEachCostBreakdownRow(raw, (row) => {
+    items.push({
+      dimension: row.dimension,
+      id: row.id,
+      name: row.name,
+      cost: row.cost,
+    });
+  });
   return items;
 }
 
@@ -326,7 +349,7 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
       entity_id: z.string().uuid().optional()
         .describe("Optional: department or agent UUID for second-level analytics; ignored when dimension is model"),
       period: z.enum(["7d", "30d"]).default("30d").describe("Time window"),
-      limit: z.number().int().min(1).max(50).default(10)
+      limit: z.coerce.number().int().min(1).max(50).default(10)
         .describe("Max items to return per level"),
     },
     async ({ dimension, entity_id, period, limit }) => {
@@ -458,29 +481,14 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
             if (totalFromApi > 200) truncatedAgents = true;
 
             const agentCostMap = new Map<string, { cost: number; requests: number; lastUsed: string | null }>();
-            if (costsRaw && typeof costsRaw === "object") {
-              const cd = (costsRaw as Record<string, unknown>).data;
-              if (cd && typeof cd === "object") {
-                const breakdown = (cd as Record<string, unknown>).breakdown;
-                if (Array.isArray(breakdown)) {
-                  for (const dim of breakdown) {
-                    if (!dim || typeof dim !== "object") continue;
-                    if ((dim as Record<string, unknown>).dimension !== "agent") continue;
-                    const items = (dim as Record<string, unknown>).items;
-                    if (!Array.isArray(items)) continue;
-                    for (const item of items) {
-                      if (!item || typeof item !== "object") continue;
-                      const it = item as Record<string, unknown>;
-                      agentCostMap.set(String(it.id ?? it.entityId ?? ""), {
-                        cost: Number(it.cost ?? it.totalCost ?? 0),
-                        requests: Number(it.requests ?? it.totalRequests ?? 0),
-                        lastUsed: (it.lastUsed ?? it.lastRequestAt ?? null) as string | null,
-                      });
-                    }
-                  }
-                }
-              }
-            }
+            forEachCostBreakdownRow(costsRaw, (row) => {
+              if (row.dimension !== "agent") return;
+              agentCostMap.set(row.id, {
+                cost: row.cost,
+                requests: row.requests,
+                lastUsed: row.lastUsed,
+              });
+            });
 
             const avgRequests = agentCostMap.size > 0
               ? [...agentCostMap.values()].reduce((s, v) => s + v.requests, 0) / agentCostMap.size

@@ -204,6 +204,26 @@ describe("drill_down_spend (integration)", () => {
     expect(body.topLevel[0].id).toBe("1");
     expect(body.topLevel[0].cost).toBe(80);
   });
+
+  it("coerces string limit from JSON arguments", async () => {
+    const mockManager: Partial<ManagerClient> = {
+      getAnalyticsCosts: vi.fn().mockResolvedValue({
+        data: {
+          items: [
+            { name: "A", id: "1", cost: 80, requests: 10 },
+            { name: "B", id: "2", cost: 20, requests: 5 },
+          ],
+        },
+      }),
+    };
+    const res = await callCompositeTool(mockManager, "drill_down_spend", {
+      dimension: "department",
+      period: "30d",
+      limit: "2",
+    });
+    const body = parseToolJson(res) as { topLevel: unknown[] };
+    expect(body.topLevel).toHaveLength(2);
+  });
 });
 
 describe("find_idle_resources (integration)", () => {

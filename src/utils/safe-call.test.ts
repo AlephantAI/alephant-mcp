@@ -4,7 +4,13 @@ vi.hoisted(() => {
   process.env.ALEPHANT_RATE_LIMIT_RPM = "0";
 });
 
-import { safeCall, compositeToolAbortOnHttpError, compositeToolAbortFromError } from "./safe-call.js";
+import {
+  safeCall,
+  compositeToolAbortOnHttpError,
+  compositeToolAbortFromError,
+  toolResultForAuthAndRateLimit,
+  toHttpLike,
+} from "./safe-call.js";
 import { resetGlobalRateLimiter } from "./rate-limiter.js";
 
 describe("safeCall", () => {
@@ -163,5 +169,19 @@ describe("compositeToolAbortFromError", () => {
   it("delegates single reason to compositeToolAbortOnHttpError", () => {
     const res = compositeToolAbortFromError({ status: 403, message: "no" }, "vk");
     expect(res?.isError).toBe(true);
+  });
+});
+
+describe("toolResultForAuthAndRateLimit", () => {
+  it("matches safeCall output for 401 manager", async () => {
+    const fromHelper = toolResultForAuthAndRateLimit(toHttpLike({ status: 401, message: "x" }), "manager");
+    const fromSafe = await safeCall(async () => {
+      throw { status: 401, message: "x" };
+    }, "manager");
+    expect(fromHelper).toEqual(fromSafe);
+  });
+
+  it("returns null for 500", () => {
+    expect(toolResultForAuthAndRateLimit(toHttpLike({ status: 500, message: "x" }), "manager")).toBeNull();
   });
 });

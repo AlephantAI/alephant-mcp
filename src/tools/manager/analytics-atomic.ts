@@ -10,7 +10,7 @@ export function registerManagerAtomicTools(server: McpServer, deps: ToolDeps): v
     "get_live_24h",
     "Real-time rolling 24-hour dashboard: top models, top keys, and summary KPIs.",
     {
-      limit: z.number().int().min(1).max(10).default(5)
+      limit: z.coerce.number().int().min(1).max(10).default(5)
         .describe("Top-N rows per panel section"),
     },
     async ({ limit }) => {
