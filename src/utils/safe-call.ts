@@ -21,6 +21,56 @@ function headerMap(raw: unknown): Record<string, string> {
   return out;
 }
 
+/**
+ * When any parallel sub-call fails with 401/403/429, composite tools return the same UX as {@link safeCall}
+ * instead of a partial JSON payload (auth/rate-limit affects the whole session).
+ */
+export function compositeToolAbortOnHttpError(
+  results: PromiseSettledResult<unknown>[],
+  mode: AuthMode,
+): CallToolResult | null {
+  for (const r of results) {
+    if (r.status !== "rejected") continue;
+    const e = toHttpLike(r.reason);
+    if (e.status === 401) {
+      const hint =
+        mode === "vk"
+          ? "Check your ALEPHANT_VIRTUAL_KEY."
+          : "Check your ALEPHANT_PAT and ALEPHANT_WORKSPACE_ID.";
+      return {
+        content: [{ type: "text", text: `Authentication failed. ${hint}` }],
+        isError: true,
+      };
+    }
+    if (e.status === 403) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Permission denied. This operation requires manager mode (PAT) or higher scope.",
+          },
+        ],
+        isError: true,
+      };
+    }
+    if (e.status === 429) {
+      const retryAfter = e.headers?.["retry-after"] ?? "60";
+      return {
+        content: [
+          { type: "text", text: `Rate limit exceeded. Retry after ${retryAfter} seconds.` },
+        ],
+        isError: true,
+      };
+    }
+  }
+  return null;
+}
+
+/** Same as {@link compositeToolAbortOnHttpError} for a single thrown/rejected reason (sequential handlers). */
+export function compositeToolAbortFromError(reason: unknown, mode: AuthMode): CallToolResult | null {
+  return compositeToolAbortOnHttpError([{ status: "rejected", reason } as PromiseRejectedResult], mode);
+}
+
 export function toHttpLike(err: unknown): HttpLikeError {
   if (axios.isAxiosError(err)) {
     return {

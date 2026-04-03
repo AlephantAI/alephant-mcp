@@ -4,7 +4,7 @@ vi.hoisted(() => {
   process.env.ALEPHANT_RATE_LIMIT_RPM = "0";
 });
 
-import { safeCall } from "./safe-call.js";
+import { safeCall, compositeToolAbortOnHttpError, compositeToolAbortFromError } from "./safe-call.js";
 import { resetGlobalRateLimiter } from "./rate-limiter.js";
 
 describe("safeCall", () => {
@@ -118,5 +118,50 @@ describe("safeCall", () => {
       expect(res.content[0].text).toContain("Unexpected error");
       expect(res.content[0].text).toContain("something went wrong");
     }
+  });
+});
+
+describe("compositeToolAbortOnHttpError", () => {
+  it("returns null when no rejections", () => {
+    expect(compositeToolAbortOnHttpError([{ status: "fulfilled", value: 1 }], "manager")).toBeNull();
+  });
+
+  it("returns null for generic rejection", () => {
+    expect(
+      compositeToolAbortOnHttpError([{ status: "rejected", reason: new Error("timeout") }], "manager"),
+    ).toBeNull();
+  });
+
+  it("returns 401 result for manager mode", () => {
+    const res = compositeToolAbortOnHttpError(
+      [{ status: "rejected", reason: { status: 401, message: "nope" } }],
+      "manager",
+    );
+    expect(res?.isError).toBe(true);
+    expect(res?.content[0]).toMatchObject({ type: "text" });
+    if (res?.content[0]?.type === "text") {
+      expect(res.content[0].text).toContain("ALEPHANT_PAT");
+    }
+  });
+
+  it("returns 429 with retry-after", () => {
+    const res = compositeToolAbortOnHttpError(
+      [
+        { status: "fulfilled", value: {} },
+        { status: "rejected", reason: { status: 429, message: "x", headers: { "retry-after": "15" } } },
+      ],
+      "manager",
+    );
+    expect(res?.isError).toBe(true);
+    if (res?.content[0]?.type === "text") {
+      expect(res.content[0].text).toContain("15");
+    }
+  });
+});
+
+describe("compositeToolAbortFromError", () => {
+  it("delegates single reason to compositeToolAbortOnHttpError", () => {
+    const res = compositeToolAbortFromError({ status: 403, message: "no" }, "vk");
+    expect(res?.isError).toBe(true);
   });
 });

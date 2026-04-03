@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { ToolDeps } from "../deps.js";
 import { requireManager } from "../deps.js";
 import { rateLimitedCall } from "../../utils/rate-limited-call.js";
+import { compositeToolAbortFromError, compositeToolAbortOnHttpError } from "../../utils/safe-call.js";
 import { periodToTwoWindows, type ComparisonPeriod } from "../../utils/analytics-period.js";
 
 type BreakdownItem = { dimension: string; id: string; name: string; cost: number };
@@ -81,7 +82,15 @@ function extractTopLevelSpendFromResponse(raw: unknown): TopLevelSpendRow[] {
   return mapItemsToTopLevelSpendRows(analyticsTopLevelItemArray(raw));
 }
 
-/** Sparkline numeric series from API; null if nothing usable (incl. empty object / only `period`). */
+function isFiniteNumberSeries(v: unknown): v is number[] {
+  return (
+    Array.isArray(v)
+    && v.length > 0
+    && v.every((x) => typeof x === "number" && Number.isFinite(x))
+  );
+}
+
+/** Sparkline numeric series from API; null if nothing usable (incl. empty object / only `period` / non-numeric arrays). */
 export function sparklineSeriesFromResponse(raw: unknown): Record<string, number[]> | null {
   if (!raw || typeof raw !== "object") return null;
   const d = (raw as Record<string, unknown>).data;
@@ -89,7 +98,7 @@ export function sparklineSeriesFromResponse(raw: unknown): Record<string, number
   const out: Record<string, number[]> = {};
   for (const [k, v] of Object.entries(d as Record<string, unknown>)) {
     if (k === "period") continue;
-    if (Array.isArray(v)) out[k] = v as number[];
+    if (isFiniteNumberSeries(v)) out[k] = v;
   }
   return Object.keys(out).length > 0 ? out : null;
 }
@@ -101,19 +110,23 @@ function classifySeverity(pct: number): "high" | "medium" | "low" {
   return "low";
 }
 
+function breakdownItemKey(p: BreakdownItem): string {
+  return `${p.dimension}::${p.id}`;
+}
+
 export function buildAnomalyResult(
   currentItems: BreakdownItem[],
   previousItems: BreakdownItem[],
   overview: unknown,
 ) {
-  const prevMap = new Map(previousItems.map((p) => [p.id, p]));
+  const prevMap = new Map(previousItems.map((p) => [breakdownItemKey(p), p]));
   const totalCurrent = currentItems.reduce((s, i) => s + i.cost, 0);
   const totalPrevious = previousItems.reduce((s, i) => s + i.cost, 0);
   const totalChange = totalPrevious === 0 ? (totalCurrent > 0 ? 100 : 0)
     : ((totalCurrent - totalPrevious) / totalPrevious) * 100;
 
   const anomalies = currentItems.map((cur) => {
-    const prev = prevMap.get(cur.id);
+    const prev = prevMap.get(breakdownItemKey(cur));
     const prevCost = prev?.cost ?? 0;
     const changePct = prevCost === 0 ? (cur.cost > 0 ? 100 : 0)
       : ((cur.cost - prevCost) / prevCost) * 100;
@@ -235,6 +248,9 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
           rateLimitedCall(() => manager.getAnalyticsModels(period as "7d" | "30d")),
         ]);
 
+        const authAbort = compositeToolAbortOnHttpError(results, deps.mode);
+        if (authAbort) return authAbort;
+
         const failedSteps: string[] = [];
         const vals = results.map((r, i) => {
           if (r.status === "fulfilled") return r.value;
@@ -250,6 +266,8 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
         result._meta.partial = failedSteps.length > 0;
         return toCallToolResult(result);
       } catch (err) {
+        const authAbort = compositeToolAbortFromError(err, deps.mode);
+        if (authAbort) return authAbort;
         return errorResult(`diagnose_cost_anomaly failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
@@ -272,6 +290,9 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
           rateLimitedCall(() => manager.getWorkspaceOverview()),
         ]);
 
+        const authAbort = compositeToolAbortOnHttpError(results, deps.mode);
+        if (authAbort) return authAbort;
+
         const dashboardStepNames = ["live24h", "sparklines", "overview"] as const;
         const apiFailedSteps: string[] = [];
         const vals = results.map((r, i) => {
@@ -288,6 +309,8 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
         result._meta.partial = mergedFailed.length > 0;
         return toCallToolResult(result);
       } catch (err) {
+        const authAbort = compositeToolAbortFromError(err, deps.mode);
+        if (authAbort) return authAbort;
         return errorResult(`get_executive_dashboard failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
@@ -295,12 +318,13 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
 
   server.tool(
     "drill_down_spend",
-    "Drill from workspace total spend into department/agent/model breakdown, with optional second-level entity detail.",
+    "Drill from workspace total spend into department/agent/model breakdown, with optional second-level entity detail. " +
+      "When dimension is model, entity_id is ignored (no second-level model drill).",
     {
       dimension: z.enum(["department", "agent", "model"]).default("department")
         .describe("Primary drill-down dimension"),
       entity_id: z.string().uuid().optional()
-        .describe("Optional: drill into a specific entity for second-level detail"),
+        .describe("Optional: department or agent UUID for second-level analytics; ignored when dimension is model"),
       period: z.enum(["7d", "30d"]).default("30d").describe("Time window"),
       limit: z.number().int().min(1).max(50).default(10)
         .describe("Max items to return per level"),
@@ -336,6 +360,8 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
           _meta: { partial: false, failedSteps: [] },
         });
       } catch (err) {
+        const authAbort = compositeToolAbortFromError(err, deps.mode);
+        if (authAbort) return authAbort;
         return errorResult(`drill_down_spend failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
@@ -352,21 +378,35 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
     async ({ period, include }) => {
       const manager = requireManager(deps);
       try {
-        const tasks: Promise<unknown>[] = [];
         const includeKeys = include === "all" || include === "keys";
         const includeAgents = include === "all" || include === "agents";
 
-        if (includeKeys) tasks.push(rateLimitedCall(() => manager.listVirtualKeys(1, 200)));
+        const taskSpecs: { stepName: string; run: () => Promise<unknown> }[] = [];
+        if (includeKeys) {
+          taskSpecs.push({
+            stepName: "virtual_keys",
+            run: () => rateLimitedCall(() => manager.listVirtualKeys(1, 200)),
+          });
+        }
         if (includeAgents) {
-          tasks.push(rateLimitedCall(() => manager.listAgents(undefined, 1, 200)));
-          tasks.push(rateLimitedCall(() => manager.getAnalyticsCosts(period as "7d" | "30d")));
+          taskSpecs.push({
+            stepName: "agents_list",
+            run: () => rateLimitedCall(() => manager.listAgents(undefined, 1, 200)),
+          });
+          taskSpecs.push({
+            stepName: "analytics_costs",
+            run: () => rateLimitedCall(() => manager.getAnalyticsCosts(period as "7d" | "30d")),
+          });
         }
 
-        const results = await Promise.allSettled(tasks);
+        const results = await Promise.allSettled(taskSpecs.map((s) => s.run()));
+        const authAbort = compositeToolAbortOnHttpError(results, deps.mode);
+        if (authAbort) return authAbort;
+
         const failedSteps: string[] = [];
         const vals = results.map((r, i) => {
           if (r.status === "fulfilled") return r.value;
-          failedSteps.push(`step_${i}`);
+          failedSteps.push(taskSpecs[i].stepName);
           return null;
         });
 
@@ -489,6 +529,8 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
           },
         });
       } catch (err) {
+        const authAbort = compositeToolAbortFromError(err, deps.mode);
+        if (authAbort) return authAbort;
         return errorResult(`find_idle_resources failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
@@ -520,6 +562,9 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
             windows.previous.dateFrom, windows.previous.dateTo, { [filterKey]: entity_id },
           )),
         ]);
+
+        const authAbort = compositeToolAbortOnHttpError(results, deps.mode);
+        if (authAbort) return authAbort;
 
         const failedSteps: string[] = [];
         const vals = results.map((r, i) => {
@@ -554,6 +599,8 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
         (result.previous as Record<string, unknown>).window = windows.previous;
         return toCallToolResult(result);
       } catch (err) {
+        const authAbort = compositeToolAbortFromError(err, deps.mode);
+        if (authAbort) return authAbort;
         return errorResult(`compare_entity_periods failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },

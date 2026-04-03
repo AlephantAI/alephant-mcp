@@ -91,6 +91,14 @@ describe("buildAnomalyResult", () => {
     expect(result.anomalies[0].changePercent).toBe(100);
     expect(result.anomalies[0].severity).toBe("high");
   });
+
+  it("does not conflate same id across different dimensions", () => {
+    const current = [{ dimension: "agent", id: "same", name: "A", cost: 200 }];
+    const previous = [{ dimension: "department", id: "same", name: "D", cost: 50 }];
+    const result = buildAnomalyResult(current, previous, null);
+    expect(result.anomalies[0].previousCost).toBe(0);
+    expect(result.anomalies[0].changePercent).toBe(100);
+  });
 });
 
 describe("buildDashboardResult", () => {
@@ -144,6 +152,12 @@ describe("sparklineSeriesFromResponse", () => {
     expect(
       sparklineSeriesFromResponse({ data: { period: "7d", spend: [1, 2], requests: [3, 4] } }),
     ).toEqual({ spend: [1, 2], requests: [3, 4] });
+  });
+
+  it("returns null when arrays are non-numeric or empty", () => {
+    expect(sparklineSeriesFromResponse({ data: { spend: ["1", "2"] } })).toBeNull();
+    expect(sparklineSeriesFromResponse({ data: { spend: [] } })).toBeNull();
+    expect(sparklineSeriesFromResponse({ data: { spend: [1, NaN] } })).toBeNull();
   });
 });
 
@@ -203,7 +217,7 @@ describe("find_idle_resources (integration)", () => {
     });
     const body = parseToolJson(res) as { _meta: { partial: boolean; failedSteps: string[] } };
     expect(body._meta.partial).toBe(true);
-    expect(body._meta.failedSteps).toContain("step_0");
+    expect(body._meta.failedSteps).toContain("virtual_keys");
   });
 
   it("marks agents with zero requests as idle", async () => {
@@ -266,6 +280,19 @@ describe("get_executive_dashboard (integration)", () => {
     const res = await callCompositeTool(mockManager, "get_executive_dashboard", {});
     const body = parseToolJson(res) as { _meta: { failedSteps: string[] } };
     expect(body._meta.failedSteps).toContain("sparklines");
+  });
+
+  it("returns auth error when any sub-call rejects with 401", async () => {
+    const mockManager: Partial<ManagerClient> = {
+      getLive24h: vi.fn().mockRejectedValue({ status: 401, message: "Unauthorized" }),
+      getSparklines: vi.fn().mockResolvedValue({ data: { spend: [1, 2] } }),
+      getWorkspaceOverview: vi.fn().mockResolvedValue({ code: 0, data: {} }),
+    };
+    const res = await callCompositeTool(mockManager, "get_executive_dashboard", {});
+    expect(res.isError).toBe(true);
+    const block = (res as { content?: Array<{ type: string; text?: string }> }).content?.find((c) => c.type === "text");
+    expect(block?.text).toContain("Authentication failed");
+    expect(block?.text).toContain("ALEPHANT_PAT");
   });
 });
 
