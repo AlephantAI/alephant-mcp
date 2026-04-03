@@ -51,13 +51,29 @@ PAT cannot satisfy.
 3. Composite tools use `Promise.allSettled()` for concurrent sub-calls; partial
    failures degrade gracefully with `_meta.partial` flag
 4. No new dependencies; reuse axios, zod, existing utilities
+5. Every `server.tool()` call includes a human-readable `description` string to
+   improve AI model tool-selection accuracy
+
+### API Path Mapping
+
+ManagerClient talks to **backend-saas-service**, not directly to the logs-collector.
+The backend proxies analytics requests, so paths differ from the OpenAPI spec:
+
+- OpenAPI `GET /v1/analytics/saas/live-24h` → ManagerClient `GET /api/v1/analytics/live-24h`
+- OpenAPI `GET /v1/analytics/saas/sparklines` → ManagerClient `GET /api/v1/analytics/sparklines`
+- OpenAPI `GET /v1/analytics/usage/timeseries` → ManagerClient `GET /api/v1/analytics/usage/timeseries`
+- OpenAPI `GET /v1/analytics/saas/members/{id}/analytics` → ManagerClient `GET /api/v1/analytics/members/{id}/analytics`
+- OpenAPI `GET /v1/analytics/saas/usage` → ManagerClient `GET /api/v1/analytics/usage`
+
+All paths must be verified against backend-saas-service route definitions before
+implementation.
 
 ### File Structure (additions)
 
 ```
 src/
 ├── clients/
-│   └── manager-client.ts              # +6 new methods
+│   └── manager-client.ts              # +6 new methods (4 atomic + 2 composite helpers)
 ├── tools/
 │   ├── manager/
 │   │   ├── analytics-atomic.ts        # NEW: 4 atomic tools
@@ -209,14 +225,42 @@ All composite tools share these conventions:
 **Purpose**: One-call answer to "are there cost anomalies and where?"
 
 **Internal orchestration**:
-1. `getAnalyticsCosts(period)` — current vs previous window, multi-dimension breakdown
-2. `getWorkspaceOverview()` — global KPI baseline
-3. `getAnalyticsModels(period)` — per-model split
+1. `getAnalyticsCosts(currentWindow)` — current window multi-dimension breakdown
+2. `getAnalyticsCosts(previousWindow)` — previous window (equal-length, immediately
+   preceding) for comparison — requires **new helper** `periodToTwoWindows()` that
+   computes `{current: {dateFrom, dateTo}, previous: {dateFrom, dateTo}}`
+3. `getWorkspaceOverview()` — global KPI baseline
+4. `getAnalyticsModels(period)` — per-model split
+
+**New utility** — `periodToTwoWindows(period: "7d" | "30d")`:
+```typescript
+function periodToTwoWindows(period: "7d" | "30d") {
+  const days = period === "7d" ? 7 : 30;
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const currentStart = new Date(todayUtc);
+  currentStart.setUTCDate(currentStart.getUTCDate() - (days - 1));
+  const previousEnd = new Date(currentStart);
+  previousEnd.setUTCDate(previousEnd.getUTCDate() - 1);
+  const previousStart = new Date(previousEnd);
+  previousStart.setUTCDate(previousStart.getUTCDate() - (days - 1));
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    current: { dateFrom: fmt(currentStart), dateTo: fmt(todayUtc) },
+    previous: { dateFrom: fmt(previousStart), dateTo: fmt(previousEnd) },
+  };
+}
+```
 
 **Computation logic**:
-- Parse `current` vs `previous` cost delta percentage
-- From costs breakdown, find top 3 dimensions with largest |changePercent|
+- Sum cost from each window's breakdown to get total current vs total previous
+- Match entities by ID across the two windows to compute per-entity delta
+- Find top 3 dimensions with largest |changePercent|
 - Rank by |change|, tag severity: >50% = `high`, 20-50% = `medium`, <20% = `low`
+
+**Note**: The `/v1/analytics/saas/costs` endpoint returns a **single-window**
+breakdown (no built-in previous period). Period-over-period comparison requires
+two separate calls with manually computed date ranges.
 
 **Parameters**:
 
@@ -340,13 +384,18 @@ and which direction are we heading?"
 "are there wasted keys or agents?"
 
 **Internal orchestration**:
-1. `listVirtualKeys()` — full key list
+1. `listVirtualKeys()` — full key list (response includes `spentCents` and `status`
+   per key, sufficient for key-level idle detection without analytics join)
 2. `listAgents()` — full agent list
-3. `getAnalyticsCosts(period)` — spend breakdown to correlate with entities
+3. `getAnalyticsCosts(period)` — agent-dimension spend breakdown (for agent idle
+   detection only; keys use their own `spentCents` field)
 
 **Computation logic**:
-- Join keys/agents with spend data by entity ID
-- Tag: 0 requests in window → `idle`; below 10% of average → `low_usage`
+- **Keys**: Use `VirtualKeyResponse.spentCents` directly — `spentCents === 0` → `idle`;
+  `spentCents > 0` but below 10% of average across all keys → `low_usage`.
+  No analytics join needed (costs breakdown has master_key dimension, not virtual key).
+- **Agents**: Join agent list with costs breakdown agent dimension by entity ID.
+  0 requests in window → `idle`; below 10% of average → `low_usage`.
 - Sort by idleness, attach suggestion: `revoke` / `investigate` / `keep`
 
 **Parameters**:
@@ -392,34 +441,54 @@ and which direction are we heading?"
 department/agent/member compare this week vs last week?"
 
 **Internal orchestration**:
-- Based on `entity_type`, call the corresponding analytics method for two consecutive
-  windows of equal length
-- Or use a single endpoint that returns both current and previous (e.g., costs with
-  built-in previous window)
+
+The existing entity analytics endpoints (`/agents/{id}/analytics`,
+`/departments/{id}/analytics`, `/members/{id}/analytics`) only accept a relative
+`days` parameter anchored to today — they **cannot** query a previous window.
+
+Instead, this tool uses the **SaaS usage endpoint** (`GET /api/v1/analytics/usage`)
+which supports both absolute date ranges (`dateFrom`, `dateTo`) and entity filters
+(`agentId`, `memberId`, `departmentId`). This requires a **new ManagerClient method**:
+
+```typescript
+async getSaasUsageForEntity(
+  dateFrom: string,
+  dateTo: string,
+  entityFilter: { agentId?: string; memberId?: string; departmentId?: string },
+): Promise<unknown> {
+  const { data } = await this.http.get("/api/v1/analytics/usage", {
+    params: { dateFrom, dateTo, ...entityFilter },
+  });
+  return data;
+}
+```
+
+The handler calls this method **twice** (current window + previous window, computed
+via `periodToTwoWindows()`), then aggregates the daily series from each call to
+produce per-period totals.
 
 **Parameters**:
 
-| Name              | Type   | Required | Default | Description                                |
-|-------------------|--------|----------|---------|--------------------------------------------|
-| `entity_type`     | enum   | Yes      | —       | `department` \| `agent` \| `member`        |
-| `entity_id`       | uuid   | Yes      | —       | Entity UUID                                |
-| `current_period`  | enum   | No       | `30d`   | `7d` \| `30d`                              |
-| `previous_period` | enum   | No       | `30d`   | Previous window (same length, immediately preceding) |
+| Name          | Type   | Required | Default | Description                                |
+|---------------|--------|----------|---------|--------------------------------------------|
+| `entity_type` | enum   | Yes      | —       | `department` \| `agent` \| `member`        |
+| `entity_id`   | uuid   | Yes      | —       | Entity UUID                                |
+| `period`      | enum   | No       | `30d`   | `7d` \| `30d` — previous window is same length, immediately preceding |
 
 **Output structure**:
 
 ```typescript
 {
-  entity: { type: string, id: string, name: string },
+  entity: { type: string, id: string },
   current: {
-    period: string,
+    window: { dateFrom: string, dateTo: string },
     cost: number,
     requests: number,
     tokens: number,
     avgCostPerReq: number
   },
   previous: {
-    period: string,
+    window: { dateFrom: string, dateTo: string },
     cost: number,
     requests: number,
     tokens: number,
@@ -522,11 +591,31 @@ async function compositeHandler(deps: ToolDeps): Promise<CallToolResult> {
 
 ### Rate Limiting
 
-All sub-calls within a composite tool go through the existing `acquireGlobalRateSlot()`
-in `safe-call.ts`. For composite tools with 3-4 concurrent sub-calls, the rate limiter
-serializes them if needed (default RPM from `ALEPHANT_RATE_LIMIT_RPM`).
+The existing `safeCall()` wraps entire tool handlers and calls `acquireGlobalRateSlot()`
+once. However, **composite tools make multiple HTTP requests per invocation** — the
+individual `ManagerClient` methods do NOT call `acquireGlobalRateSlot()` internally.
 
-**Consideration**: Composite tools consume multiple rate-limit slots per invocation.
+**Solution**: Composite tool handlers must wrap each sub-call in its own rate-limit
+acquisition. Introduce a helper `rateLimitedCall<T>(fn: () => Promise<T>): Promise<T>`
+that calls `acquireGlobalRateSlot()` then executes `fn()`. The composite handler
+itself does NOT use `safeCall()` for the outer wrapper (to avoid double rate-limiting);
+instead it handles error mapping manually or via a lightweight `compositeCall()` wrapper.
+
+```typescript
+async function rateLimitedCall<T>(fn: () => Promise<T>): Promise<T> {
+  await acquireGlobalRateSlot();
+  return fn();
+}
+
+// Usage in composite handler:
+const results = await Promise.allSettled([
+  rateLimitedCall(() => manager.getAnalyticsCosts(currentWindow)),
+  rateLimitedCall(() => manager.getAnalyticsCosts(previousWindow)),
+  rateLimitedCall(() => manager.getWorkspaceOverview()),
+]);
+```
+
+**Consideration**: Composite tools consume 2-4 rate-limit slots per invocation.
 The tool descriptions should note this so AI models don't over-call composites.
 
 ## 7. Testing Strategy
@@ -543,7 +632,38 @@ The tool descriptions should note this so AI models don't over-call composites.
 - MCP Resources (model catalog etc. — separate track)
 - Python SDK (separate design doc: `2026-04-01-track2-python-sdk-design.md`)
 
-## 9. Summary
+## 9. Tool Descriptions for AI Selection
+
+Each `server.tool()` registration must include a clear description string:
+
+| Tool                      | Description                                                                                  |
+|---------------------------|----------------------------------------------------------------------------------------------|
+| `get_live_24h`            | "Real-time rolling 24-hour dashboard: top models, top keys, and summary KPIs."               |
+| `get_usage_timeseries`    | "Time-series data for a single metric (cost/requests/tokens/latency/success_rate) with day or hour granularity." |
+| `get_member_analytics`    | "Per-member (user) daily cost/request/token series over a lookback period."                   |
+| `get_sparklines`          | "Lightweight 7-day multi-metric trend snapshot (spend, requests, tokens, success, latency)."  |
+| `diagnose_cost_anomaly`   | "Detects cost anomalies by comparing current vs previous period across departments, agents, and models. Returns ranked anomalies with severity. Consumes 4 API calls." |
+| `get_executive_dashboard` | "One-call management overview: real-time 24h status + 7-day sparkline trends + period KPIs. Consumes 3 API calls." |
+| `drill_down_spend`        | "Drill from workspace total spend into department/agent/model breakdown, with optional second-level entity detail." |
+| `find_idle_resources`     | "Scans virtual keys and agents for zero or low usage, returns cleanup suggestions. Consumes 2-3 API calls." |
+| `compare_entity_periods`  | "Compares a department/agent/member's KPIs across two consecutive time windows (current vs previous). Consumes 2 API calls." |
+
+## 10. New ManagerClient Methods (6 total)
+
+| Method                   | Used by              | Endpoint (backend-saas-service)           |
+|--------------------------|----------------------|-------------------------------------------|
+| `getLive24h`             | Atomic tool          | `GET /api/v1/analytics/live-24h`          |
+| `getUsageTimeseries`     | Atomic tool          | `GET /api/v1/analytics/usage/timeseries`  |
+| `getMemberAnalytics`     | Atomic tool          | `GET /api/v1/analytics/members/{id}/analytics` |
+| `getSparklines`          | Atomic tool          | `GET /api/v1/analytics/sparklines`        |
+| `getAnalyticsCostsRange` | `diagnose_cost_anomaly` | `GET /api/v1/analytics/costs` (with explicit dateFrom/dateTo) |
+| `getSaasUsageForEntity`  | `compare_entity_periods` | `GET /api/v1/analytics/usage` (with entity filters + date range) |
+
+**Note**: `getAnalyticsCostsRange` is distinct from the existing `getAnalyticsCosts`
+which uses `periodToDateRange()`. The new method accepts raw `dateFrom`/`dateTo`
+to enable two-window comparison.
+
+## 11. Summary
 
 | Layer     | Count | Names                                                                                    |
 |-----------|-------|------------------------------------------------------------------------------------------|
