@@ -64,6 +64,9 @@ The backend proxies analytics requests, so paths differ from the OpenAPI spec:
 - OpenAPI `GET /v1/analytics/usage/timeseries` → ManagerClient `GET /api/v1/analytics/usage/timeseries`
 - OpenAPI `GET /v1/analytics/saas/members/{id}/analytics` → ManagerClient `GET /api/v1/analytics/members/{id}/analytics`
 - OpenAPI `GET /v1/analytics/saas/usage` → ManagerClient `GET /api/v1/analytics/usage`
+- OpenAPI `GET /v1/analytics/saas/costs` → ManagerClient `GET /api/v1/analytics/costs`
+- OpenAPI `GET /v1/analytics/saas/overview` → ManagerClient `GET /api/v1/analytics/overview`
+- OpenAPI `GET /v1/analytics/saas/models` → ManagerClient `GET /api/v1/analytics/models`
 
 All paths must be verified against backend-saas-service route definitions before
 implementation.
@@ -225,8 +228,8 @@ All composite tools share these conventions:
 **Purpose**: One-call answer to "are there cost anomalies and where?"
 
 **Internal orchestration**:
-1. `getAnalyticsCosts(currentWindow)` — current window multi-dimension breakdown
-2. `getAnalyticsCosts(previousWindow)` — previous window (equal-length, immediately
+1. `getAnalyticsCostsRange(currentWindow)` — current window multi-dimension breakdown
+2. `getAnalyticsCostsRange(previousWindow)` — previous window (equal-length, immediately
    preceding) for comparison — requires **new helper** `periodToTwoWindows()` that
    computes `{current: {dateFrom, dateTo}, previous: {dateFrom, dateTo}}`
 3. `getWorkspaceOverview()` — global KPI baseline
@@ -341,10 +344,12 @@ and which direction are we heading?"
 "where is the money going?"
 
 **Internal orchestration** (varies by `dimension`):
-- `dimension = "department"` → `getAnalyticsCosts(period)` department breakdown
-- `dimension = "agent"` → costs agent dimension
-- `dimension = "model"` → `getAnalyticsModels(period)`
-- If `entity_id` provided → call corresponding analytics method for second-level detail
+
+| `dimension`    | Top-level call                    | 2nd-level call (if `entity_id` provided) |
+|----------------|-----------------------------------|------------------------------------------|
+| `"department"` | `getAnalyticsCosts(period)` → department items | `getDepartmentAnalytics(entity_id, period)` |
+| `"agent"`      | `getAnalyticsCosts(period)` → agent items      | `getAgentAnalytics(entity_id, period)`      |
+| `"model"`      | `getAnalyticsModels(period)`                    | N/A (models have no sub-drill)              |
 
 **Parameters**:
 
@@ -394,9 +399,18 @@ and which direction are we heading?"
 - **Keys**: Use `VirtualKeyResponse.spentCents` directly — `spentCents === 0` → `idle`;
   `spentCents > 0` but below 10% of average across all keys → `low_usage`.
   No analytics join needed (costs breakdown has master_key dimension, not virtual key).
+  **Note**: `spentCents` is a **lifetime** cumulative field, not period-scoped.
+  The `period` parameter only affects agent idle detection. Tool output should
+  clarify this distinction to prevent user confusion.
 - **Agents**: Join agent list with costs breakdown agent dimension by entity ID.
   0 requests in window → `idle`; below 10% of average → `low_usage`.
+  Agent idle detection **is** period-scoped (uses costs breakdown for the given window).
 - Sort by idleness, attach suggestion: `revoke` / `investigate` / `keep`
+
+**Pagination**: Both `listVirtualKeys()` and `listAgents()` are paginated (default
+`pageSize=50`). The handler must loop pages until all entries are fetched, or use
+a large `pageSize` (e.g., 200) to minimize round-trips. If the total exceeds a
+reasonable cap (e.g., 500), truncate and note in `_meta`.
 
 **Parameters**:
 
@@ -609,11 +623,15 @@ async function rateLimitedCall<T>(fn: () => Promise<T>): Promise<T> {
 
 // Usage in composite handler:
 const results = await Promise.allSettled([
-  rateLimitedCall(() => manager.getAnalyticsCosts(currentWindow)),
-  rateLimitedCall(() => manager.getAnalyticsCosts(previousWindow)),
+  rateLimitedCall(() => manager.getAnalyticsCostsRange(currentWindow)),
+  rateLimitedCall(() => manager.getAnalyticsCostsRange(previousWindow)),
   rateLimitedCall(() => manager.getWorkspaceOverview()),
 ]);
 ```
+
+Composite handlers do **not** use `safeCall()` for the outer wrapper (to avoid
+double rate-limiting). Instead, they perform manual error-to-`CallToolResult`
+mapping: catch top-level errors, format as `{ isError: true, content: [...] }`.
 
 **Consideration**: Composite tools consume 2-4 rate-limit slots per invocation.
 The tool descriptions should note this so AI models don't over-call composites.
