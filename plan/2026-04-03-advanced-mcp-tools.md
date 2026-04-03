@@ -40,11 +40,20 @@
 
 - [ ] **步骤 1: 写失败测试**
 
-在 `src/utils/analytics-period.test.ts` 末尾追加：
+在 `src/utils/analytics-period.test.ts` 中：
+
+首先，将现有的 import 行：
+```typescript
+import { periodToDateRange, agentPeriodToDays } from "./analytics-period.js";
+```
+修改为：
+```typescript
+import { periodToDateRange, agentPeriodToDays, periodToTwoWindows } from "./analytics-period.js";
+```
+
+然后在文件末尾追加以下测试：
 
 ```typescript
-import { periodToTwoWindows } from "./analytics-period.js";
-
 describe("periodToTwoWindows", () => {
   it("returns two 7-day windows for 7d", () => {
     const result = periodToTwoWindows("7d");
@@ -743,7 +752,7 @@ function errorResult(message: string): CallToolResult {
 export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps): void {
   server.tool(
     "diagnose_cost_anomaly",
-    "Detects cost anomalies by comparing current vs previous period across departments, agents, and models. Returns ranked anomalies with severity. Consumes 4 API calls.",
+    "Detects cost anomalies by comparing current vs previous period across departments, agents, and models. Returns ranked anomalies with severity and model breakdown. Consumes 4 API calls.",
     {
       period: z.enum(["7d", "30d"]).default("30d")
         .describe("Analysis window; compares with equal-length previous window"),
@@ -757,12 +766,13 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
           rateLimitedCall(() => manager.getAnalyticsCostsRange(windows.current.dateFrom, windows.current.dateTo)),
           rateLimitedCall(() => manager.getAnalyticsCostsRange(windows.previous.dateFrom, windows.previous.dateTo)),
           rateLimitedCall(() => manager.getWorkspaceOverview()),
+          rateLimitedCall(() => manager.getAnalyticsModels(period as "7d" | "30d")),
         ]);
 
         const failedSteps: string[] = [];
         const vals = results.map((r, i) => {
           if (r.status === "fulfilled") return r.value;
-          failedSteps.push(["costsCurrent", "costsPrevious", "overview"][i]);
+          failedSteps.push(["costsCurrent", "costsPrevious", "overview", "models"][i]);
           return null;
         });
 
@@ -795,6 +805,7 @@ export function registerManagerCompositeTools(server: McpServer, deps: ToolDeps)
         const currentItems = extractItems(vals[0]);
         const previousItems = extractItems(vals[1]);
         const result = buildAnomalyResult(currentItems, previousItems, vals[2]);
+        (result as Record<string, unknown>).modelBreakdown = vals[3] ?? null;
         result._meta.failedSteps = failedSteps;
         result._meta.partial = failedSteps.length > 0;
         return toCallToolResult(result);
@@ -899,6 +910,91 @@ describe("buildCompareResult", () => {
 });
 ```
 
+同时追加 3 个组合工具 handler 的基本测试（mock ManagerClient，验证降级行为）：
+
+```typescript
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.hoisted(() => {
+  process.env.ALEPHANT_RATE_LIMIT_RPM = "0";
+});
+
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerManagerCompositeTools } from "./analytics-composite.js";
+
+function createMockManager(overrides: Record<string, unknown> = {}) {
+  return {
+    getAnalyticsCosts: vi.fn().mockResolvedValue({ data: { breakdown: [] } }),
+    getAnalyticsModels: vi.fn().mockResolvedValue({ data: [] }),
+    getDepartmentAnalytics: vi.fn().mockResolvedValue({ data: {} }),
+    getAgentAnalytics: vi.fn().mockResolvedValue({ data: {} }),
+    listVirtualKeys: vi.fn().mockResolvedValue({ data: { data: [] } }),
+    listAgents: vi.fn().mockResolvedValue({ data: { data: [] } }),
+    getSaasUsageForEntity: vi.fn().mockResolvedValue({ data: { series: [] } }),
+    ...overrides,
+  };
+}
+
+describe("drill_down_spend handler", () => {
+  it("returns topLevel as spec-shaped array with limit applied", async () => {
+    const mockManager = createMockManager({
+      getAnalyticsCosts: vi.fn().mockResolvedValue({
+        data: { items: [
+          { name: "A", id: "1", cost: 80, requests: 10 },
+          { name: "B", id: "2", cost: 20, requests: 5 },
+          { name: "C", id: "3", cost: 10, requests: 2 },
+        ] },
+      }),
+    });
+    // handler 应截取前 2 条
+    const result = JSON.parse("..."); // 仅验证结构
+    // 实际测试通过 McpServer.tool 注册后调用 handler
+  });
+});
+
+describe("find_idle_resources handler", () => {
+  it("returns partial=true when one API call fails", async () => {
+    const mockManager = createMockManager({
+      listVirtualKeys: vi.fn().mockRejectedValue(new Error("timeout")),
+    });
+    // handler 应降级，idleKeys=[], partial=true, failedSteps 包含 step_0
+  });
+
+  it("fills idleAgents when agents have 0 requests in cost breakdown", async () => {
+    const mockManager = createMockManager({
+      listAgents: vi.fn().mockResolvedValue({
+        data: { data: [
+          { id: "ag-1", name: "Agent1" },
+          { id: "ag-2", name: "Agent2" },
+        ] },
+      }),
+      getAnalyticsCosts: vi.fn().mockResolvedValue({
+        data: { breakdown: [
+          { dimension: "agent", items: [
+            { id: "ag-1", cost: 0, requests: 0 },
+          ] },
+        ] },
+      }),
+    });
+    // handler 应标记 ag-1 idle, ag-2 idle(未出现在 breakdown 中)
+    // totalAgents=2, idleAgentsCount=2
+  });
+});
+
+describe("compare_entity_periods handler", () => {
+  it("returns partial=true when previous window call fails", async () => {
+    const mockManager = createMockManager({
+      getSaasUsageForEntity: vi.fn()
+        .mockResolvedValueOnce({ data: { series: [{ cost: 10, requests: 5, tokens: 100 }] } })
+        .mockRejectedValueOnce(new Error("timeout")),
+    });
+    // handler 应降级，previous KPIs 为 0，partial=true
+  });
+});
+```
+
+> **注意**：上述 handler 测试为结构性示例，实现时需通过 `McpServer` 注册后调用 handler 或提取 handler 函数进行测试。核心验证目标是降级行为（`_meta.partial` 和 `failedSteps`）以及数据正确填充。
+
 - [ ] **步骤 2: 运行测试确认失败**
 
 运行: `npx vitest run src/tools/manager/analytics-composite.test.ts`
@@ -969,6 +1065,31 @@ export function buildCompareResult(
           ? await rateLimitedCall(() => manager.getAnalyticsModels(period as "7d" | "30d"))
           : await rateLimitedCall(() => manager.getAnalyticsCosts(period as "7d" | "30d"));
 
+        // Transform topLevel API response into spec-required structure:
+        // Array<{ name, id, cost, requestCount, percentage }>
+        const extractTopLevel = (raw: unknown): Array<{ name: string; id: string; cost: number; requestCount: number; percentage: number }> => {
+          if (!raw || typeof raw !== "object") return [];
+          const d = (raw as Record<string, unknown>).data;
+          const items = Array.isArray(d) ? d
+            : (d && typeof d === "object" && Array.isArray((d as Record<string, unknown>).items))
+              ? (d as Record<string, unknown>).items as unknown[]
+              : [];
+          const mapped = (items as Record<string, unknown>[]).map((it) => ({
+            name: String(it.name ?? it.label ?? ""),
+            id: String(it.id ?? it.entityId ?? ""),
+            cost: Number(it.cost ?? it.totalCost ?? 0),
+            requestCount: Number(it.requests ?? it.totalRequests ?? it.requestCount ?? 0),
+            percentage: 0,
+          }));
+          const totalCost = mapped.reduce((s, i) => s + i.cost, 0);
+          for (const m of mapped) {
+            m.percentage = totalCost > 0 ? Math.round((m.cost / totalCost) * 10000) / 100 : 0;
+          }
+          return mapped;
+        };
+
+        const topLevel = extractTopLevel(topLevelData).slice(0, limit);
+
         let drillDown: unknown = null;
         if (entity_id) {
           if (dimension === "department") {
@@ -986,7 +1107,7 @@ export function buildCompareResult(
           dimension,
           period,
           limit,
-          topLevel: topLevelData,
+          topLevel,
           drillDown,
           _meta: { partial: false, failedSteps: [] },
         });
@@ -1030,12 +1151,19 @@ export function buildCompareResult(
         let idleAgents: unknown[] = [];
         let totalKeys = 0;
         let totalAgents = 0;
+        let truncatedKeys = false;
+        let truncatedAgents = false;
 
+        // --- Keys idle detection ---
+        // Note: pageSize=200 is the maximum per-page limit of the API.
+        // If the workspace has more than 200 keys, results will be truncated.
         if (includeKeys && vals[0]) {
           const keysResp = vals[0] as Record<string, unknown>;
           const keysData = (keysResp.data ?? keysResp) as Record<string, unknown>;
           const keys = Array.isArray(keysData.data) ? keysData.data : (Array.isArray(keysData) ? keysData : []);
           totalKeys = keys.length;
+          const totalFromApi = Number((keysData as Record<string, unknown>).total ?? keys.length);
+          if (totalFromApi > 200) truncatedKeys = true;
           const avgSpent = keys.length > 0
             ? keys.reduce((s: number, k: Record<string, unknown>) => s + Number(k.spentCents ?? 0), 0) / keys.length
             : 0;
@@ -1054,6 +1182,78 @@ export function buildCompareResult(
             }));
         }
 
+        // --- Agents idle detection ---
+        // Associate agent list with cost breakdown's agent dimension by ID.
+        // pageSize=200 is the API maximum; if workspace has more agents, results are truncated.
+        if (includeAgents) {
+          const agentIdx = includeKeys ? 1 : 0;
+          const costsIdx = agentIdx + 1;
+          const agentsRaw = vals[agentIdx];
+          const costsRaw = vals[costsIdx];
+
+          if (agentsRaw) {
+            const agentsResp = agentsRaw as Record<string, unknown>;
+            const agentsData = (agentsResp.data ?? agentsResp) as Record<string, unknown>;
+            const agents = Array.isArray(agentsData.data) ? agentsData.data
+              : (Array.isArray(agentsData) ? agentsData : []);
+            totalAgents = agents.length;
+            const totalFromApi = Number((agentsData as Record<string, unknown>).total ?? agents.length);
+            if (totalFromApi > 200) truncatedAgents = true;
+
+            // Build a map of agentId -> cost/requests from costs breakdown
+            const agentCostMap = new Map<string, { cost: number; requests: number; lastUsed: string | null }>();
+            if (costsRaw && typeof costsRaw === "object") {
+              const cd = (costsRaw as Record<string, unknown>).data;
+              if (cd && typeof cd === "object") {
+                const breakdown = (cd as Record<string, unknown>).breakdown;
+                if (Array.isArray(breakdown)) {
+                  for (const dim of breakdown) {
+                    if (!dim || typeof dim !== "object") continue;
+                    if ((dim as Record<string, unknown>).dimension !== "agent") continue;
+                    const items = (dim as Record<string, unknown>).items;
+                    if (!Array.isArray(items)) continue;
+                    for (const item of items) {
+                      if (!item || typeof item !== "object") continue;
+                      const it = item as Record<string, unknown>;
+                      agentCostMap.set(String(it.id ?? it.entityId ?? ""), {
+                        cost: Number(it.cost ?? it.totalCost ?? 0),
+                        requests: Number(it.requests ?? it.totalRequests ?? 0),
+                        lastUsed: (it.lastUsed ?? it.lastRequestAt ?? null) as string | null,
+                      });
+                    }
+                  }
+                }
+              }
+            }
+
+            const avgRequests = agentCostMap.size > 0
+              ? [...agentCostMap.values()].reduce((s, v) => s + v.requests, 0) / agentCostMap.size
+              : 0;
+
+            idleAgents = agents
+              .map((a: Record<string, unknown>) => {
+                const agentId = String(a.id ?? "");
+                const usage = agentCostMap.get(agentId);
+                const requests = usage?.requests ?? 0;
+                const cost = usage?.cost ?? 0;
+                const lastUsed = usage?.lastUsed ?? (a.lastUsed as string | null) ?? null;
+                const isIdle = requests === 0;
+                const isLow = !isIdle && avgRequests > 0 && requests < avgRequests * 0.1;
+                if (!isIdle && !isLow) return null;
+                return {
+                  id: agentId,
+                  name: a.name ?? a.label,
+                  cost,
+                  requests,
+                  lastUsed,
+                  status: isIdle ? "idle" : "low_usage",
+                  suggestion: isIdle ? "investigate" : "keep",
+                };
+              })
+              .filter(Boolean);
+          }
+        }
+
         return toCallToolResult({
           period,
           idleKeys,
@@ -1064,7 +1264,13 @@ export function buildCompareResult(
             totalAgents,
             idleAgentsCount: idleAgents.length,
           },
-          _meta: { partial: failedSteps.length > 0, failedSteps },
+          _meta: {
+            partial: failedSteps.length > 0,
+            failedSteps,
+            ...(truncatedKeys || truncatedAgents
+              ? { truncated: true, truncatedNote: "pageSize=200 exceeded; not all resources were scanned." }
+              : {}),
+          },
         });
       } catch (err) {
         return errorResult(`find_idle_resources failed: ${err instanceof Error ? err.message : String(err)}`);
