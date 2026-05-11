@@ -16,9 +16,11 @@ export function registerCostAuditPrompt(server: McpServer, mode: AuthMode): void
         "3. Call get_my_budget and get_my_scope for context.\n" +
         "4. Optionally call get_my_recent_requests for recent activity.";
       const mgrSteps =
-        "1. Call get_usage_summary, get_daily_costs, and get_cost_by_model (manager uses workspace analytics).\n" +
-        "2. Call get_workspace_overview for totals.\n" +
-        "3. Use list_departments / get_department_analytics or list_agents / get_agent_analytics as needed.";
+        "1. Call get_executive_dashboard for the current workspace snapshot.\n" +
+        "2. Call diagnose_cost_anomaly for the audit period to identify unusual spend changes.\n" +
+        "3. Call get_usage_summary, get_daily_costs, and get_cost_by_model for the same window.\n" +
+        "4. Use list_departments, list_agents, list_members, and entity analytics as needed for attribution.\n" +
+        "5. Call get_workspace_budget_status to include budget risk when available.";
       const steps = mode === "vk" ? vkSteps : mgrSteps;
       return {
         messages: [

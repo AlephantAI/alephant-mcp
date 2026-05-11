@@ -10,6 +10,7 @@ import type {
   VirtualKeysListResponse,
   AgentsListResponse,
   DepartmentsListResponse,
+  MembersListResponse,
   SubscriptionResponse,
   BudgetControlResponse,
   BudgetControlConfig,
@@ -33,6 +34,11 @@ export class ManagerClient {
   async getWorkspaceOverview(): Promise<WorkspaceOverviewResponse> {
     const { data } = await this.http.get("/api/v1/analytics/overview");
     return data as WorkspaceOverviewResponse;
+  }
+
+  async getWorkspaceBudgetStatus(): Promise<unknown> {
+    const { data } = await this.http.get("/api/v1/analytics/budget-status");
+    return data;
   }
 
   async getAnalyticsCosts(period: SharedPeriod): Promise<unknown> {
@@ -95,6 +101,13 @@ export class ManagerClient {
       params: { page, pageSize },
     });
     return data as DepartmentsListResponse;
+  }
+
+  async listMembers(page = 1, pageSize = 100): Promise<MembersListResponse> {
+    const { data } = await this.http.get("/api/v1/members", {
+      params: { page, pageSize },
+    });
+    return data as MembersListResponse;
   }
 
   async getDepartmentAnalytics(departmentId: string, period: AgentDeptPeriod): Promise<unknown> {

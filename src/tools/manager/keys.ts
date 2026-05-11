@@ -19,6 +19,7 @@ export function registerManagerKeyTools(server: McpServer, deps: ToolDeps): void
 
   server.tool(
     "create_virtual_key",
+    "Creates a virtual key in the current workspace. Requires explicit user confirmation before calling.",
     {
       label: z.string().min(1).max(100).describe("Human-readable key label"),
       master_key_id: z.string().uuid().describe("Parent master key UUID"),
@@ -39,6 +40,7 @@ export function registerManagerKeyTools(server: McpServer, deps: ToolDeps): void
 
   server.tool(
     "update_key_budget",
+    "Updates the budget and enforcement action for an existing virtual key. Requires explicit user confirmation before calling.",
     {
       key_id: z.string().uuid(),
       budget_cents: z.coerce.number().int().min(0).describe("Budget in cents (÷100 = dollars)"),
@@ -58,6 +60,7 @@ export function registerManagerKeyTools(server: McpServer, deps: ToolDeps): void
 
   server.tool(
     "revoke_virtual_key",
+    "Revokes an existing virtual key. Requires explicit user confirmation before calling.",
     { key_id: z.string().uuid() },
     async ({ key_id }) => {
       const manager = requireManager(deps);

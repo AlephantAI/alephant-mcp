@@ -2,9 +2,9 @@
 
 # Alephant MCP Usage Guide (Chinese & English)
 
-本文档说明如何在 **Cursor、Claude Desktop、VS Code（MCP 扩展）** 等宿主中**导入与配置** Alephant MCP、如何用**自然语言与 Agent** 驱动工具，以及 **Virtual Key（VK）模式**与 **Manager（管理者 / PAT）模式**的差异。
+本文档说明如何在 **Cursor、Codex、OpenCode、Claude Code、Claude Desktop、VS Code（MCP 扩展）** 等宿主中**导入与配置** Alephant MCP、如何用**自然语言与 Agent** 驱动工具，以及 **Virtual Key（VK）模式**与 **Manager（管理者 / PAT）模式**的差异。
 
-This guide covers how to **import and configure** the Alephant MCP in hosts such as **Cursor, Claude Desktop, and VS Code (MCP extension)**, how to drive tools via **natural language and agents**, and how **Virtual Key (VK)** mode differs from **Manager (PAT)** mode.
+This guide covers how to **import and configure** the Alephant MCP in hosts such as **Cursor, Codex, OpenCode, Claude Code, Claude Desktop, and VS Code (MCP extension)**, how to drive tools via **natural language and agents**, and how **Virtual Key (VK)** mode differs from **Manager (PAT)** mode.
 
 ---
 
@@ -99,7 +99,123 @@ Hosts usually read project-level or user-level MCP config (e.g. Cursor `mcp.json
 
 ---
 
-### 1.4 本地开发（克隆仓库时）· Local dev (from clone)
+### 1.4 Codex：`config.toml`
+
+**中文**
+
+在 `~/.codex/config.toml` 中添加 stdio MCP server：
+
+**English**
+
+Add a stdio MCP server in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.alephant]
+command = "npx"
+args = ["-y", "@alephantai/mcp"]
+env = {
+  ALEPHANT_API_BASE_URL = "https://api.alephant.ai",
+  ALEPHANT_VIRTUAL_KEY = "vk-your-key-here"
+}
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+```
+
+Manager 模式将 `env` 改为 PAT + workspace：
+
+For Manager mode, use PAT + workspace in `env`:
+
+```toml
+env = {
+  ALEPHANT_API_BASE_URL = "https://api.alephant.ai",
+  ALEPHANT_PAT = "pat_your_token_here",
+  ALEPHANT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000000"
+}
+```
+
+```bash
+codex mcp list
+codex mcp get alephant
+```
+
+---
+
+### 1.5 OpenCode：`opencode.json`
+
+**中文**
+
+在 OpenCode 配置的 `mcp` 字段中添加本地 server：
+
+**English**
+
+Add a local server under `mcp` in your OpenCode config:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "alephant": {
+      "type": "local",
+      "command": ["npx", "-y", "@alephantai/mcp"],
+      "enabled": true,
+      "environment": {
+        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_VIRTUAL_KEY": "vk-your-key-here"
+      }
+    }
+  }
+}
+```
+
+Manager 模式将 `environment` 中的 VK 替换为 `ALEPHANT_PAT` 与 `ALEPHANT_WORKSPACE_ID`。
+
+For Manager mode, replace the VK env with `ALEPHANT_PAT` and `ALEPHANT_WORKSPACE_ID`.
+
+---
+
+### 1.6 Claude Code：CLI 或 `.mcp.json` · CLI or `.mcp.json`
+
+**中文**
+
+个人全局配置可用 `claude mcp add-json`：
+
+**English**
+
+For user-scoped config, use `claude mcp add-json`:
+
+```bash
+claude mcp add-json alephant '{"type":"stdio","command":"npx","args":["-y","@alephantai/mcp"],"env":{"ALEPHANT_API_BASE_URL":"https://api.alephant.ai","ALEPHANT_VIRTUAL_KEY":"vk-your-key-here"}}' --scope user
+claude mcp list
+claude mcp get alephant
+```
+
+项目共享配置可在项目根目录使用 `.mcp.json`：
+
+For shared project config, use `.mcp.json` in the project root:
+
+```json
+{
+  "mcpServers": {
+    "alephant": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@alephantai/mcp"],
+      "env": {
+        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_VIRTUAL_KEY": "vk-your-key-here"
+      }
+    }
+  }
+}
+```
+
+Manager 模式同样替换为 PAT + workspace。
+
+For Manager mode, use PAT + workspace env instead.
+
+---
+
+### 1.7 本地开发（克隆仓库时）· Local dev (from clone)
 
 在 `**alephant-mcp` 仓库根目录**内不要用 `npx -y @alephantai/mcp` 做冒烟测试（npm 会把当前目录当作包根，Windows 上常见 bin 解析失败）。请从**上级目录**执行 npx，或使用：
 
@@ -117,7 +233,7 @@ For local wiring, point `command` to `node` and `args` to `./bin/alephant-mcp.js
 
 ---
 
-### 1.5 全局安装（可选）· Global install (optional)
+### 1.8 全局安装（可选）· Global install (optional)
 
 ```bash
 npm install -g @alephantai/mcp

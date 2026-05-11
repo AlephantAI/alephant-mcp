@@ -15,6 +15,7 @@ export function registerManagerPolicyTools(server: McpServer, deps: ToolDeps): v
 
   server.tool(
     "set_budget_policy",
+    "Updates the workspace budget policy and enforcement action. Requires explicit user confirmation before calling.",
     {
       budget_cents: z.coerce.number().int().min(0),
       action: policyActionSchema,

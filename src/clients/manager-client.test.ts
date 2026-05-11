@@ -68,6 +68,24 @@ describe("ManagerClient atomic methods", () => {
       });
     });
   });
+
+  describe("listMembers", () => {
+    it("calls /api/v1/members with pagination params", async () => {
+      mockAxiosGet(client, { data: [] });
+      await client.listMembers(2, 25);
+      expect(client.http.get).toHaveBeenCalledWith("/api/v1/members", {
+        params: { page: 2, pageSize: 25 },
+      });
+    });
+  });
+
+  describe("getWorkspaceBudgetStatus", () => {
+    it("calls /api/v1/analytics/budget-status", async () => {
+      mockAxiosGet(client, { data: {} });
+      await client.getWorkspaceBudgetStatus();
+      expect(client.http.get).toHaveBeenCalledWith("/api/v1/analytics/budget-status");
+    });
+  });
 });
 
 describe("ManagerClient composite helper methods", () => {

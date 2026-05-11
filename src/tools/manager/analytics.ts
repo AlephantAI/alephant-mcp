@@ -8,4 +8,14 @@ export function registerManagerAnalyticsTools(server: McpServer, deps: ToolDeps)
     const manager = requireManager(deps);
     return safeCall(() => manager.getWorkspaceOverview(), "manager");
   });
+
+  server.tool(
+    "get_workspace_budget_status",
+    "Returns workspace-level budget status from analytics, complementing VK-scoped budget checks.",
+    {},
+    async () => {
+      const manager = requireManager(deps);
+      return safeCall(() => manager.getWorkspaceBudgetStatus(), "manager");
+    },
+  );
 }

@@ -93,6 +93,23 @@ export interface DepartmentsListResponse {
   pageSize: number;
 }
 
+export interface MemberResponse {
+  id: string;
+  name?: string;
+  email?: string;
+  departmentId?: string;
+  role?: string;
+  status?: string;
+  createdAt?: string;
+}
+
+export interface MembersListResponse {
+  members: MemberResponse[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface SubscriptionResponse {
   plan: string;
   status: string;
