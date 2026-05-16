@@ -6,7 +6,7 @@ This guide tracks the distribution materials for `@alephantai/mcp` and the submi
 
 - npm package: `@alephantai/mcp`
 - CLI binary: `alephant-mcp`
-- MCP registry name: `io.github.alephantai/alephant-mcp`
+- MCP registry name: `io.github.AlephantAI/alephant-mcp`
 - Transport: local stdio
 - Repository: `https://github.com/AlephantAI/alephant-mcp`
 - Homepage: `https://alephant.io`
@@ -29,10 +29,10 @@ Before publishing, confirm `package.json.mcpName` exactly matches `server.json.n
 npx @modelcontextprotocol/registry init
 mcp-publisher login github
 mcp-publisher publish
-curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.alephantai/alephant-mcp"
+curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.AlephantAI/alephant-mcp"
 ```
 
-If the registry publisher reports namespace permission issues, use GitHub Actions OIDC for the `io.github.alephantai/*` namespace or switch to a verified domain namespace after DNS verification.
+If the registry publisher reports namespace permission issues, use GitHub Actions OIDC for the `io.github.AlephantAI/*` namespace or switch to a verified domain namespace after DNS verification.
 
 ## Smithery
 
