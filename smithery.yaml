@@ -1,0 +1,60 @@
+runtime: "typescript"
+
+name: "Alephant MCP"
+description: >
+  FinOps and BYO-KEY governance for AI coding assistants. Query AI spend,
+  inspect budgets, list models, and manage Alephant virtual keys and policies
+  directly from Cursor, Claude Desktop, Codex, Claude Code, OpenCode, and other
+  MCP hosts.
+license: "ISC"
+homepage: "https://alephant.io"
+repository: "https://github.com/AlephantAI/alephant-mcp"
+
+startCommand:
+  type: "stdio"
+  command: "npx"
+  args:
+    - "-y"
+    - "@alephantai/mcp"
+
+configSchema:
+  type: "object"
+  properties:
+    ALEPHANT_API_BASE_URL:
+      type: "string"
+      title: "Alephant API Base URL"
+      description: "Alephant SaaS API base URL, for example https://api.alephant.ai."
+      default: "https://api.alephant.ai"
+    ALEPHANT_VIRTUAL_KEY:
+      type: "string"
+      title: "Virtual Key (VK Mode)"
+      description: >
+        Virtual Key for read-only, cockpit-scoped VK mode. Use this for
+        developer-level cost and usage visibility. If ALEPHANT_PAT is also set,
+        Manager mode takes precedence.
+      sensitive: true
+    ALEPHANT_PAT:
+      type: "string"
+      title: "Personal Access Token (Manager Mode)"
+      description: >
+        Personal Access Token for workspace-wide Manager mode. Requires
+        ALEPHANT_WORKSPACE_ID. Manager mode can manage virtual keys, policies,
+        members, departments, agents, budgets, and workspace analytics.
+      sensitive: true
+    ALEPHANT_WORKSPACE_ID:
+      type: "string"
+      title: "Workspace ID (Manager Mode)"
+      description: "Workspace UUID required when ALEPHANT_PAT is provided."
+    ALEPHANT_RATE_LIMIT_RPM:
+      type: "number"
+      title: "Local Rate Limit RPM"
+      description: "Optional local HTTP tool-call limit per minute. Defaults to 60; set 0 to disable."
+      default: 60
+  required:
+    - "ALEPHANT_API_BASE_URL"
+  anyOf:
+    - required:
+        - "ALEPHANT_VIRTUAL_KEY"
+    - required:
+        - "ALEPHANT_PAT"
+        - "ALEPHANT_WORKSPACE_ID"

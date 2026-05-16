@@ -1,5 +1,6 @@
 {
   "name": "@alephantai/mcp",
+  "mcpName": "io.github.alephantai/alephant-mcp",
   "version": "0.0.6",
   "type": "module",
   "main": "dist/index.js",
@@ -9,8 +10,10 @@
   "files": [
     "bin",
     "dist",
-    "docs",
-    "skills"
+    "docs/marketplace-submission.md",
+    "docs/zh-CN/agent-mcp-usage.md",
+    "server.json",
+    "smithery.yaml"
   ],
   "scripts": {
     "build": "tsc",
@@ -21,12 +24,17 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
+    "model-context-protocol",
     "alephant",
+    "byok",
     "finops",
     "ai-cost",
-    "llm-observability"
+    "llm-observability",
+    "cursor",
+    "claude"
   ],
-  "author": "",
+  "author": "Alephant AI",
   "license": "ISC",
   "description": "Alephant MCP Server — query AI spend, manage virtual keys and policies from your AI IDE",
   "homepage": "https://alephant.io",

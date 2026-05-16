@@ -201,7 +201,7 @@ Manager only: `get_workspace_overview`, `get_workspace_budget_status`, `list_vir
 ## Documentation
 
 - **[中文：在 AI Agent 中如何使用 MCP](docs/zh-CN/agent-mcp-usage.md)** — 自然语言提问示例、`/alephant-…` 快捷模板、工具对照表  
-- **Cursor Skill（可选）**：将 [`skills/alephant-mcp-usage/`](skills/alephant-mcp-usage/) 复制到项目的 `.cursor/skills/alephant-mcp-usage/`，便于 Agent 稳定优先调用本 MCP
+- **Marketplace submission**: see [`docs/marketplace-submission.md`](docs/marketplace-submission.md) for official MCP Registry, Smithery, and Glama submission notes.
 
 ## Development
 

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.alephantai/alephant-mcp",
+  "description": "FinOps and BYO-KEY governance MCP server for AI coding assistants. Query AI spend, inspect budgets, list models, and manage Alephant virtual keys and policies from Cursor, Claude Desktop, Codex, Claude Code, OpenCode, and other MCP hosts.",
+  "repository": {
+    "url": "https://github.com/AlephantAI/alephant-mcp",
+    "source": "github"
+  },
+  "version": "0.0.6",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@alephantai/mcp",
+      "version": "0.0.6",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "ALEPHANT_API_BASE_URL",
+          "description": "Alephant SaaS API base URL, for example https://api.alephant.ai.",
+          "format": "uri",
+          "isRequired": true,
+          "isSecret": false
+        },
+        {
+          "name": "ALEPHANT_VIRTUAL_KEY",
+          "description": "Virtual Key for read-only, cockpit-scoped VK mode. Use this mode for developer-level cost and usage visibility.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "ALEPHANT_PAT",
+          "description": "Personal Access Token for Manager mode. When set, Manager mode takes precedence over ALEPHANT_VIRTUAL_KEY.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "ALEPHANT_WORKSPACE_ID",
+          "description": "Workspace UUID required with ALEPHANT_PAT for Manager mode.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "ALEPHANT_RATE_LIMIT_RPM",
+          "description": "Optional local HTTP tool-call limit per minute. Defaults to 60; set 0 to disable local throttling.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
