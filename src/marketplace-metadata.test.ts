@@ -10,11 +10,18 @@ describe("marketplace metadata", () => {
     const pkg = readJson<{ name: string; version: string; mcpName: string }>("package.json");
     const server = readJson<{
       name: string;
+      description: string;
       version: string;
-      packages: Array<{ registryType: string; identifier: string; version: string }>;
+      packages: Array<{
+        registryType: string;
+        identifier: string;
+        version: string;
+        environmentVariables?: Array<{ format?: string }>;
+      }>;
     }>("server.json");
 
     expect(server.name).toBe(pkg.mcpName);
+    expect(server.description.length).toBeLessThanOrEqual(100);
     expect(server.version).toBe(pkg.version);
     expect(server.packages).toHaveLength(1);
     expect(server.packages[0]).toMatchObject({
@@ -22,5 +29,9 @@ describe("marketplace metadata", () => {
       identifier: pkg.name,
       version: pkg.version,
     });
+
+    for (const env of server.packages[0].environmentVariables ?? []) {
+      expect(["string", "number", "boolean", "filepath"]).toContain(env.format);
+    }
   });
 });

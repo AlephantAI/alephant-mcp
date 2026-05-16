@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.alephantai/alephant-mcp",
-  "description": "FinOps and BYO-KEY governance MCP server for AI coding assistants. Query AI spend, inspect budgets, list models, and manage Alephant virtual keys and policies from Cursor, Claude Desktop, Codex, Claude Code, OpenCode, and other MCP hosts.",
+  "description": "FinOps and BYO-KEY governance MCP server for AI coding assistants.",
   "repository": {
     "url": "https://github.com/AlephantAI/alephant-mcp",
     "source": "github"
@@ -19,7 +19,7 @@
         {
           "name": "ALEPHANT_API_BASE_URL",
           "description": "Alephant SaaS API base URL, for example https://api.alephant.ai.",
-          "format": "uri",
+          "format": "string",
           "isRequired": true,
           "isSecret": false
         },
