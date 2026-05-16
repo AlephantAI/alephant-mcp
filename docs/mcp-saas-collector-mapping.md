@@ -2,8 +2,8 @@
 
 本文档描述 **`@gengbingbing/alephant-mcp`**（`alephant-mcp` 源码）在两种认证模式下，MCP 工具与 **SaaS（`backend-saas-service`）**、**Collector 分析服务** 的对应关系。
 
-- **Base URL（SaaS）**：环境变量 `ALEPHANT_API_BASE_URL`（例如 `https://api.alephant.io`）。
-- **Collector**：SaaS 通过 `COLLECTOR_ANALYTICS_BASE_URL` 转发；Collector 路径均以 **`/v1/analytics/...`** 为前缀（与 `internal/client/collector_analytics.go` 一致）。
+- **Base URL（SaaS）**：环境变量 `ALEPHANT_API_BASE_URL`（例如 `https://alephant.io`）。
+- **Collector**：SaaS 通过 `COLLECTOR_ANALYTICS_BASE_URL` 转发；Collector 路径均以 **`/v1/analytics/...`** 为前缀（与 `internal/client/collector_analytics.go` 一致）。MCP 客户端不直连 `analytics.alephant.io`。
 
 实现参考：
 

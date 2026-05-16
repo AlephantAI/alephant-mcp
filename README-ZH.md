@@ -32,7 +32,7 @@ Alephant MCP 是本地 stdio MCP server。多工作区请配置多个 server 条
   - **类型 (Type)**: command
   - **命令 (Command)**: `npx -y @alephantai/mcp`
 4. 配置环境变量以对接真实后端：
-  - **ALEPHANT_API_BASE_URL**：后端地址，如 `https://api.alephant.io`
+  - **ALEPHANT_API_BASE_URL**：后端地址，如 `https://alephant.io`
   - **ALEPHANT_VIRTUAL_KEY**：您的虚拟 Key（VK 模式，只读）
   - 或 **ALEPHANT_PAT** + **ALEPHANT_WORKSPACE_ID**（Manager 模式，完整管理权限）
 5. 确认状态指示灯变为 **绿色**
@@ -46,7 +46,7 @@ Alephant MCP 是本地 stdio MCP server。多工作区请配置多个 server 条
 command = "npx"
 args = ["-y", "@alephantai/mcp"]
 env = {
-  ALEPHANT_API_BASE_URL = "https://api.alephant.ai",
+  ALEPHANT_API_BASE_URL = "https://alephant.io",
   ALEPHANT_VIRTUAL_KEY = "vk-..."
 }
 startup_timeout_sec = 20
@@ -57,7 +57,7 @@ Manager 模式改为：
 
 ```toml
 env = {
-  ALEPHANT_API_BASE_URL = "https://api.alephant.ai",
+  ALEPHANT_API_BASE_URL = "https://alephant.io",
   ALEPHANT_PAT = "pat_...",
   ALEPHANT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000000"
 }
@@ -83,7 +83,7 @@ codex mcp get alephant
       "command": ["npx", "-y", "@alephantai/mcp"],
       "enabled": true,
       "environment": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_VIRTUAL_KEY": "vk-..."
       }
     }
@@ -98,7 +98,7 @@ Manager 模式在 `environment` 中使用 `ALEPHANT_PAT` 和 `ALEPHANT_WORKSPACE
 个人全局配置可使用 CLI：
 
 ```bash
-claude mcp add-json alephant '{"type":"stdio","command":"npx","args":["-y","@alephantai/mcp"],"env":{"ALEPHANT_API_BASE_URL":"https://api.alephant.ai","ALEPHANT_VIRTUAL_KEY":"vk-..."}}' --scope user
+claude mcp add-json alephant '{"type":"stdio","command":"npx","args":["-y","@alephantai/mcp"],"env":{"ALEPHANT_API_BASE_URL":"https://alephant.io","ALEPHANT_VIRTUAL_KEY":"vk-..."}}' --scope user
 claude mcp list
 claude mcp get alephant
 ```
@@ -113,7 +113,7 @@ claude mcp get alephant
       "command": "npx",
       "args": ["-y", "@alephantai/mcp"],
       "env": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_VIRTUAL_KEY": "vk-..."
       }
     }

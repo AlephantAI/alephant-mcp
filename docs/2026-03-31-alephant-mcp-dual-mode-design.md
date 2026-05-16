@@ -790,7 +790,7 @@ async function safeCall<T>(
       "command": "npx",
       "args": ["-y", "@alephant/mcp"],
       "env": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_VIRTUAL_KEY": "vk-agent-a3f8c2..."
       }
     }
@@ -807,7 +807,7 @@ async function safeCall<T>(
       "command": "npx",
       "args": ["-y", "@alephant/mcp"],
       "env": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_PAT": "pat_wsa3f8c2_e4b7d9f1c0a53e8b...",
         "ALEPHANT_WORKSPACE_ID": "your-workspace-uuid"
       }
@@ -825,7 +825,7 @@ async function safeCall<T>(
       "command": "npx",
       "args": ["-y", "@alephant/mcp"],
       "env": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_PAT": "pat_...workspace-a...",
         "ALEPHANT_WORKSPACE_ID": "uuid-workspace-a"
       }
@@ -834,7 +834,7 @@ async function safeCall<T>(
       "command": "npx",
       "args": ["-y", "@alephant/mcp"],
       "env": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_PAT": "pat_...workspace-b...",
         "ALEPHANT_WORKSPACE_ID": "uuid-workspace-b"
       }
@@ -953,7 +953,7 @@ config:
   - key: ALEPHANT_API_BASE_URL
     description: Alephant API base URL
     required: true
-    default: https://api.alephant.ai
+    default: https://alephant.io
   - key: ALEPHANT_VIRTUAL_KEY
     description: Virtual Key for member/read-only mode (use this OR ALEPHANT_PAT)
     required: false

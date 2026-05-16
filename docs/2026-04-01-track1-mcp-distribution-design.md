@@ -85,7 +85,7 @@ configSchema:
       description: >
         Override the default API endpoint.
         Leave blank for production.
-      default: "https://api.alephant.io/v1"
+      default: "https://alephant.io"
   anyOf:
     - required: ["ALEPHANT_VIRTUAL_KEY"]
     - required: ["ALEPHANT_PAT"]
@@ -151,7 +151,7 @@ Track 1.0 完成后，以下平台**无需额外工作**即可接入（均支持
       "args": ["-y", "@alephant/mcp"],
       "env": {
         "ALEPHANT_PAT": "pat_wsa3f8c2_...",
-        "ALEPHANT_BASE_URL": "https://api.alephant.io/v1"
+        "ALEPHANT_BASE_URL": "https://alephant.io"
       }
     }
   }
@@ -224,7 +224,7 @@ interface McpConfigSnippetProps {
 - hover 时在行尾出现次级操作按钮「Copy MCP Config」（与现有「Copy Token」并列）
 - 点击后打开 inline tooltip 或 popover，内嵌 `McpConfigSnippet`
 
-**生成 config：** 包含 `ALEPHANT_PAT`（明文）+ `ALEPHANT_BASE_URL`（`https://api.alephant.io/v1`）
+**生成 config：** 包含 `ALEPHANT_PAT`（明文）+ `ALEPHANT_BASE_URL`（`https://alephant.io`）
 
 ---
 
@@ -300,4 +300,4 @@ interface McpConfigSnippetProps {
 
 | 日期 | 说明 |
 |------|------|
-| 2026-04-01 | 初稿：Track 1.0（npm + smithery.yaml + 三目录）+ Track 1.2（双入口 copy config + 文档）完整设计；base URL 确认为 `https://api.alephant.io/v1`。 |
+| 2026-04-01 | 初稿：Track 1.0（npm + smithery.yaml + 三目录）+ Track 1.2（双入口 copy config + 文档）完整设计；base URL 确认为 `https://alephant.io`。 |

@@ -520,7 +520,7 @@ crew.kickoff()
       "args": ["-y", "@alephant/mcp"],
       "env": {
         "ALEPHANT_PAT": "pat_wsa3f8c2_...",
-        "ALEPHANT_BASE_URL": "https://api.alephant.ai"
+        "ALEPHANT_BASE_URL": "https://alephant.io"
       }
     }
   }

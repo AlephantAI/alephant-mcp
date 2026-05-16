@@ -29,7 +29,7 @@
       "command": "npx",
       "args": ["-y", "@alephantai/mcp"],
       "env": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_VIRTUAL_KEY": "vk-..."
       }
     }
@@ -55,7 +55,7 @@ Manager 模式把 `ALEPHANT_VIRTUAL_KEY` 替换为：
 command = "npx"
 args = ["-y", "@alephantai/mcp"]
 env = {
-  ALEPHANT_API_BASE_URL = "https://api.alephant.ai",
+  ALEPHANT_API_BASE_URL = "https://alephant.io",
   ALEPHANT_VIRTUAL_KEY = "vk-..."
 }
 startup_timeout_sec = 20
@@ -82,7 +82,7 @@ codex mcp get alephant
       "command": ["npx", "-y", "@alephantai/mcp"],
       "enabled": true,
       "environment": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_VIRTUAL_KEY": "vk-..."
       }
     }
@@ -95,7 +95,7 @@ codex mcp get alephant
 个人配置可用 CLI：
 
 ```bash
-claude mcp add-json alephant '{"type":"stdio","command":"npx","args":["-y","@alephantai/mcp"],"env":{"ALEPHANT_API_BASE_URL":"https://api.alephant.ai","ALEPHANT_VIRTUAL_KEY":"vk-..."}}' --scope user
+claude mcp add-json alephant '{"type":"stdio","command":"npx","args":["-y","@alephantai/mcp"],"env":{"ALEPHANT_API_BASE_URL":"https://alephant.io","ALEPHANT_VIRTUAL_KEY":"vk-..."}}' --scope user
 claude mcp list
 ```
 
@@ -109,7 +109,7 @@ claude mcp list
       "command": "npx",
       "args": ["-y", "@alephantai/mcp"],
       "env": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_VIRTUAL_KEY": "vk-..."
       }
     }

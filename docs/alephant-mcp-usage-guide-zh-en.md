@@ -66,7 +66,7 @@ Hosts usually read project-level or user-level MCP config (e.g. Cursor `mcp.json
       "command": "npx",
       "args": ["-y", "@alephantai/mcp"],
       "env": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_VIRTUAL_KEY": "vk-your-key-here"
       }
     }
@@ -83,7 +83,7 @@ Hosts usually read project-level or user-level MCP config (e.g. Cursor `mcp.json
       "command": "npx",
       "args": ["-y", "@alephantai/mcp"],
       "env": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_PAT": "pat_your_token_here",
         "ALEPHANT_WORKSPACE_ID": "00000000-0000-0000-0000-000000000000"
       }
@@ -114,7 +114,7 @@ Add a stdio MCP server in `~/.codex/config.toml`:
 command = "npx"
 args = ["-y", "@alephantai/mcp"]
 env = {
-  ALEPHANT_API_BASE_URL = "https://api.alephant.ai",
+  ALEPHANT_API_BASE_URL = "https://alephant.io",
   ALEPHANT_VIRTUAL_KEY = "vk-your-key-here"
 }
 startup_timeout_sec = 20
@@ -127,7 +127,7 @@ For Manager mode, use PAT + workspace in `env`:
 
 ```toml
 env = {
-  ALEPHANT_API_BASE_URL = "https://api.alephant.ai",
+  ALEPHANT_API_BASE_URL = "https://alephant.io",
   ALEPHANT_PAT = "pat_your_token_here",
   ALEPHANT_WORKSPACE_ID = "00000000-0000-0000-0000-000000000000"
 }
@@ -159,7 +159,7 @@ Add a local server under `mcp` in your OpenCode config:
       "command": ["npx", "-y", "@alephantai/mcp"],
       "enabled": true,
       "environment": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_VIRTUAL_KEY": "vk-your-key-here"
       }
     }
@@ -184,7 +184,7 @@ For Manager mode, replace the VK env with `ALEPHANT_PAT` and `ALEPHANT_WORKSPACE
 For user-scoped config, use `claude mcp add-json`:
 
 ```bash
-claude mcp add-json alephant '{"type":"stdio","command":"npx","args":["-y","@alephantai/mcp"],"env":{"ALEPHANT_API_BASE_URL":"https://api.alephant.ai","ALEPHANT_VIRTUAL_KEY":"vk-your-key-here"}}' --scope user
+claude mcp add-json alephant '{"type":"stdio","command":"npx","args":["-y","@alephantai/mcp"],"env":{"ALEPHANT_API_BASE_URL":"https://alephant.io","ALEPHANT_VIRTUAL_KEY":"vk-your-key-here"}}' --scope user
 claude mcp list
 claude mcp get alephant
 ```
@@ -201,7 +201,7 @@ For shared project config, use `.mcp.json` in the project root:
       "command": "npx",
       "args": ["-y", "@alephantai/mcp"],
       "env": {
-        "ALEPHANT_API_BASE_URL": "https://api.alephant.ai",
+        "ALEPHANT_API_BASE_URL": "https://alephant.io",
         "ALEPHANT_VIRTUAL_KEY": "vk-your-key-here"
       }
     }
