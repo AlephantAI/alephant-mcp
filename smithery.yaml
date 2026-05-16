@@ -23,8 +23,8 @@ configSchema:
     ALEPHANT_API_BASE_URL:
       type: "string"
       title: "Alephant API Base URL"
-      description: "Alephant SaaS API base URL, for example https://api.alephant.ai."
-      default: "https://api.alephant.ai"
+      description: "Alephant SaaS API base URL, for example https://alephant.io."
+      default: "https://alephant.io"
     ALEPHANT_VIRTUAL_KEY:
       type: "string"
       title: "Virtual Key (VK Mode)"
