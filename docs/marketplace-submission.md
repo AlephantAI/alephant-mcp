@@ -36,7 +36,12 @@ If the registry publisher reports namespace permission issues, use GitHub Action
 
 ## Smithery
 
-Smithery reads `smithery.yaml` from the MCP server project root.
+Smithery now supports two publishing paths:
+
+- **URL**: publish a public HTTPS Streamable HTTP MCP endpoint. If authentication is required, expose OAuth-compatible discovery.
+- **Local stdio**: publish a pre-built MCPB bundle that clients download and run locally.
+
+This package is currently a local stdio server distributed through npm. The next Smithery-ready step is to create an MCPB bundle, or add a hosted Streamable HTTP endpoint.
 
 Submission checklist:
 
@@ -45,6 +50,7 @@ Submission checklist:
 - The configured command is `npx -y @alephantai/mcp`.
 - The config form includes VK mode and Manager mode credentials.
 - Sensitive credential fields are marked as sensitive.
+- For current Smithery publishing, provide either `server.mcpb` or a public Streamable HTTP URL.
 
 ## Glama
 
@@ -69,7 +75,6 @@ Glama indexes tool names, descriptions, schemas, and safety annotations. For bet
 
 ## Current Known Follow-ups
 
-- Add descriptions for every MCP tool, not only write operations.
-- Add MCP annotations for read-only, write, idempotent, and destructive operations.
+- Build and publish an MCPB bundle, or add a remote Streamable HTTP endpoint, for current Smithery distribution.
 - Add a remote MCP / Streamable HTTP entry if Alephant wants hosted connector distribution.
 - Keep API base URL examples consistent across README, Fern docs, Smithery, and product UI.

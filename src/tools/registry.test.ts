@@ -67,4 +67,41 @@ describe("registerTools", () => {
       expect(byName.get(name)?.description).toContain("Requires explicit user confirmation");
     }
   });
+
+  it("provides marketplace descriptions and safety annotations for every tool", async () => {
+    for (const mode of ["vk", "manager"] as const) {
+      const tools = await listRegisteredTools(mode);
+      for (const tool of tools) {
+        expect(tool.description, `${mode}:${tool.name}`).toBeTruthy();
+        expect(tool.annotations, `${mode}:${tool.name}`).toBeTruthy();
+        expect(tool.annotations?.openWorldHint, `${mode}:${tool.name}`).toBe(false);
+      }
+    }
+  });
+
+  it("marks only manager write operations as non-read-only", async () => {
+    const writeTools = new Set([
+      "create_virtual_key",
+      "update_key_budget",
+      "revoke_virtual_key",
+      "set_budget_policy",
+    ]);
+
+    const tools = await listRegisteredTools("manager");
+    for (const tool of tools) {
+      if (writeTools.has(tool.name)) {
+        expect(tool.annotations?.readOnlyHint, tool.name).toBe(false);
+      } else {
+        expect(tool.annotations?.readOnlyHint, tool.name).toBe(true);
+        expect(tool.annotations?.destructiveHint, tool.name).toBe(false);
+        expect(tool.annotations?.idempotentHint, tool.name).toBe(true);
+      }
+    }
+
+    const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    expect(byName.get("create_virtual_key")?.annotations?.destructiveHint).toBe(false);
+    expect(byName.get("update_key_budget")?.annotations?.destructiveHint).toBe(false);
+    expect(byName.get("set_budget_policy")?.annotations?.destructiveHint).toBe(false);
+    expect(byName.get("revoke_virtual_key")?.annotations?.destructiveHint).toBe(true);
+  });
 });
