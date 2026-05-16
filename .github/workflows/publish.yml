@@ -1,0 +1,96 @@
+name: Publish MCP package and registry metadata
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "lts/*"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate release metadata
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
+          const server = JSON.parse(fs.readFileSync("server.json", "utf8"));
+
+          function assert(condition, message) {
+            if (!condition) {
+              console.error(message);
+              process.exitCode = 1;
+            }
+          }
+
+          assert(pkg.version === lock.version, "package-lock.json version must match package.json version");
+          assert(pkg.version === lock.packages[""].version, "package-lock root package version must match package.json version");
+          assert(pkg.version === server.version, "server.json version must match package.json version");
+          assert(pkg.version === server.packages?.[0]?.version, "server.json package version must match package.json version");
+          assert(pkg.mcpName === server.name, "package.json mcpName must match server.json name");
+          assert(server.description.length <= 100, "server.json description must be <= 100 characters");
+
+          for (const env of server.packages?.[0]?.environmentVariables ?? []) {
+            assert(["string", "number", "boolean", "filepath"].includes(env.format), `${env.name} uses unsupported env format: ${env.format}`);
+          }
+
+          if (process.exitCode) process.exit(process.exitCode);
+          console.log(`Validated ${pkg.name}@${pkg.version} (${pkg.mcpName})`);
+          NODE
+
+      - name: Check npm version is unpublished
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "@alephantai/mcp@$VERSION" version >/tmp/npm-version 2>/dev/null; then
+            echo "@alephantai/mcp@$VERSION is already published to npm."
+            cat /tmp/npm-version
+            exit 1
+          fi
+          echo "@alephantai/mcp@$VERSION is not published yet."
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Pack dry run
+        run: npm pack --dry-run
+
+      - name: Publish package to npm
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish
